@@ -1,0 +1,53 @@
+version: 1
+name: "Example GIS QA suite"
+
+sources:
+  - path: "data/"
+    pattern: "*.gpkg"
+
+defaults:
+  crs:
+    required: true
+    allowed_epsg: [4326, 3857, 32633]
+  geometry:
+    valid: true
+    fix: false
+  duplicates:
+    exact: true
+    severity: warn
+    fuzzy:
+      enabled: true
+      predicate: intersects
+      min_overlap: 0.8
+
+layers:
+  parcels:
+    attributes:
+      required: [parcel_id, zone]
+      not_null: [parcel_id]
+      unique: [parcel_id]
+      domains:
+        zone:
+          allowed: [residential, commercial, industrial]
+    topology:
+      enabled: true
+      severity: warn
+      no_overlaps: true
+      no_gaps: true
+
+  roads:
+    attributes:
+      required: [name, surface, lanes]
+      not_null: [name]
+      max_null_fraction:
+        surface: 0.1
+      domains:
+        surface:
+          allowed: [asphalt, gravel, dirt]
+        lanes:
+          min: 1
+          max: 8
+    topology:
+      enabled: true
+      severity: warn
+      no_dangles: true

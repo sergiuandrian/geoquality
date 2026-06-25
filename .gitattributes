@@ -1,0 +1,22 @@
+# Normalize line endings for cross-platform consistency (LF in repo).
+* text=auto eol=lf
+
+*.py text eol=lf
+*.pyi text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.j2 text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+
+# GeoPackage and other binary geospatial assets
+*.gpkg binary
+*.shp binary
+*.dbf binary
+*.shx binary
+*.prj binary
+*.cpg binary
+*.parquet binary

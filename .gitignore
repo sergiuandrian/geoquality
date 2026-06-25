@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+pip-wheel-metadata/
+*.egg
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# geoqa outputs
+geoqa-report.html
+geoqa-report.json
+fixed/
+examples/data/
+
+# OS
+.DS_Store
+Thumbs.db

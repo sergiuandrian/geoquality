@@ -1,0 +1,7 @@
+- id: geoqa
+  name: geoqa (geospatial data quality)
+  description: Validate geometry, CRS, topology, duplicates and attributes of geospatial files.
+  entry: geoqa run
+  language: python
+  pass_filenames: false
+  always_run: true
