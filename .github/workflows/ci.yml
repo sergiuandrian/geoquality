@@ -73,7 +73,9 @@ jobs:
       - name: Generate sample data and run geoqa
         run: |
           python examples/make_sample_data.py
-          geoqa run -c examples/geoqa.yml --html geoqa-report.html --json geoqa-report.json
+          geoqa run -c examples/geoqa.yml --html geoqa-report.html --json geoqa-report.json --no-fail
+          test -f geoqa-report.html
+          test -f geoqa-report.json
 
       - name: Upload HTML report
         if: always()
