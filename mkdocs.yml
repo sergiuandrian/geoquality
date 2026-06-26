@@ -1,0 +1,50 @@
+site_name: geoqa
+site_description: Data quality for geospatial data — Great Expectations for GIS.
+site_url: https://sergiuandrian.github.io/geoquality/
+repo_url: https://github.com/sergiuandrian/geoquality
+repo_name: sergiuandrian/geoquality
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Configuration: configuration.md
+  - Checks: checks.md
+  - Data sources: data-sources.md
+  - Reports & integrations: reporting.md
+  - Custom checks (plugins): plugins.md
+  - CI / pre-commit: ci.md
+  - Development: development.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
