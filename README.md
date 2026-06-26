@@ -177,6 +177,9 @@ geoqa run -c geoqa.yml \
   SKIP → skipped, WARN → `system-out`) so CI dashboards show geoqa results.
 - **GeoJSON failures** writes one `<layer>.failures.geojson` (WGS84) per layer,
   each feature tagged with the checks it failed.
+- The **HTML report embeds an interactive Leaflet map** highlighting offending
+  features (Leaflet + OSM tiles load from a CDN; disable with the `include_map`
+  argument when calling `write_html` directly).
 
 Generate a JSON Schema for editor autocomplete/validation of `geoqa.yml`:
 
