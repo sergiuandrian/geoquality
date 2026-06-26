@@ -2,9 +2,13 @@ version: 2
 updates:
   - package-ecosystem: pip
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Only widen a lower bound when a release actually requires it, so we don't
+    # ratchet this library's minimum supported versions up to the latest.
+    versioning-strategy: increase-if-necessary
     groups:
       python-dependencies:
         patterns:
@@ -12,6 +16,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: "develop"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

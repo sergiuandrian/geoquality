@@ -11,9 +11,15 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from geoqa import __version__
-from geoqa.config import load_suite
+from geoqa.config import config_json_schema, load_suite
 from geoqa.engine import run_suite
-from geoqa.reporting import print_report, write_html, write_json
+from geoqa.reporting import (
+    print_report,
+    write_geojson_failures,
+    write_html,
+    write_json,
+    write_junit,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -121,6 +127,12 @@ def run(
     json_out: Path | None = typer.Option(
         None, "--json", help="Write a JSON report to this path."
     ),
+    junit_out: Path | None = typer.Option(
+        None, "--junit", help="Write a JUnit XML report (CI-native test reporting)."
+    ),
+    geojson_out: Path | None = typer.Option(
+        None, "--geojson-out", help="Directory to write GeoJSON of offending features."
+    ),
     fix_output: Path | None = typer.Option(
         None, "--fix-output", help="Directory to write auto-repaired layers (requires geometry.fix)."
     ),
@@ -136,6 +148,9 @@ def run(
         LogLevel.warning, "--log-level", case_sensitive=False, help="Logging verbosity."
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all but error logs."),
+    workers: int = typer.Option(
+        1, "--workers", "-j", min=1, help="Validate this many layers in parallel."
+    ),
 ) -> None:
     """Run all configured checks and report results."""
     _setup_logging(log_level, quiet)
@@ -151,6 +166,8 @@ def run(
             suite,
             fix_output_dir=fix_output,
             progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
+            workers=workers,
+            collect_failures=geojson_out is not None or html is not None,
         )
 
     print_report(report, console=console, verbose=verbose)
@@ -162,6 +179,12 @@ def run(
     if html:
         write_html(report, html, title=suite.report.title or suite.name, max_issues=max_issues)
         console.print(f"[dim]HTML report -> {html}[/]")
+    if junit_out:
+        write_junit(report, junit_out)
+        console.print(f"[dim]JUnit report -> {junit_out}[/]")
+    if geojson_out:
+        written = write_geojson_failures(report, geojson_out)
+        console.print(f"[dim]GeoJSON failures -> {len(written)} file(s) in {geojson_out}[/]")
 
     threshold = "never" if no_fail else fail_on.value
     if report.has_failures(threshold):
@@ -214,27 +237,45 @@ def validate(
     )
 
 
+@app.command()
+def schema(
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Write the JSON Schema here (default: stdout)."
+    ),
+) -> None:
+    """Emit a JSON Schema for geoqa.yml (editor autocomplete / validation)."""
+    import json
+
+    doc = json.dumps(config_json_schema(), indent=2, ensure_ascii=False)
+    if output:
+        output.write_text(doc, encoding="utf-8")
+        console.print(f"[green]Wrote JSON Schema ->[/] {output}")
+    else:
+        print(doc)
+
+
 @app.command("list-checks")
 def list_checks() -> None:
-    """List the available checks and their configuration keys."""
-    rows = {
-        "crs": "required, allowed_epsg, expected_epsg",
-        "geometry": "valid, no_empty, no_missing, fix",
-        "duplicates": "exact, fuzzy.{enabled,predicate,min_overlap,max_distance}",
-        "attributes": "required, not_null, unique, max_null_fraction, domains.{allowed,min,max,regex}",
-        "topology": "no_overlaps, no_gaps, no_dangles, min_area, snap_tolerance",
-    }
+    """List the available checks (built-in and plugins) and their config keys."""
     from rich.table import Table
 
+    from geoqa.registry import ENTRY_POINT_GROUP, get_registry
+
+    builtin = {"crs", "geometry", "duplicates", "attributes", "topology"}
     table = Table(title="geoqa checks", show_lines=True)
     table.add_column("Check", style="bold cyan")
+    table.add_column("Source", style="dim")
     table.add_column("Config keys")
-    for name, keys in rows.items():
-        table.add_row(name, keys)
+    for spec in get_registry().specs():
+        origin = "built-in" if spec.name in builtin else "plugin"
+        table.add_row(spec.name, origin, ", ".join(spec.keys()))
     console.print(table)
     console.print(
         "[dim]Every check also supports [bold]enabled[/] and [bold]severity[/] "
         "(error | warn | info).[/]"
+    )
+    console.print(
+        f"[dim]Add your own checks via the [bold]{ENTRY_POINT_GROUP}[/] entry point group.[/]"
     )
 
 

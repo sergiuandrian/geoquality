@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    field_validator,
+    model_validator,
+)
 
 from geoqa.result import Severity
 
@@ -90,10 +97,30 @@ class LayerConfig(_Base):
 
 
 class SourceSpec(_Base):
-    path: str
+    # File/folder source (one of ``path`` or ``connection`` is required).
+    path: str | None = None
     pattern: str | None = None  # glob applied when ``path`` is a directory
     layer: str | None = None  # specific sub-layer for multi-layer formats (GPKG)
     name: str | None = None  # override the inferred layer name
+
+    # PostGIS / SQLAlchemy source.
+    connection: str | None = None  # SQLAlchemy URL, e.g. postgresql://user@host/db
+    table: str | None = None  # table to read (mutually exclusive with ``query``)
+    query: str | None = None  # raw SQL returning a geometry column
+    geom_column: str = "geom"  # name of the geometry column to read
+
+    @model_validator(mode="after")
+    def _check_source(self) -> SourceSpec:
+        if self.connection:
+            if not (self.table or self.query):
+                raise ValueError(
+                    "a 'connection' source requires either 'table' or 'query'"
+                )
+            if self.table and self.query:
+                raise ValueError("set only one of 'table' or 'query', not both")
+        elif not self.path:
+            raise ValueError("each source needs a 'path' or a 'connection'")
+        return self
 
 
 class ReportConfig(_Base):
@@ -124,11 +151,68 @@ class Suite(_Base):
         merged = copy.deepcopy(self.defaults)
         override = self.layers.get(layer_name, {})
         merged = _deep_merge(merged, override)
-        return LayerConfig.model_validate(merged)
+        return resolve_layer_model().model_validate(merged)
 
     def resolve_path(self, path: str) -> Path:
         p = Path(path)
         return p if p.is_absolute() else (self.base_dir / p)
+
+
+_layer_model_cache: tuple[int, type[LayerConfig]] | None = None
+
+
+def resolve_layer_model() -> type[LayerConfig]:
+    """Return a LayerConfig model extended with any plugin check config keys.
+
+    When only the built-in checks are registered this is exactly ``LayerConfig``,
+    so behaviour (and ``extra="forbid"`` typo detection) is unchanged. When
+    plugins are present, an extended model adds a typed field per plugin check.
+    """
+    global _layer_model_cache
+    from geoqa.registry import get_registry
+
+    registry = get_registry()
+    specs = registry.specs()
+    cache_key = hash(tuple((s.name, id(s.config_model)) for s in specs))
+    if _layer_model_cache is not None and _layer_model_cache[0] == cache_key:
+        return _layer_model_cache[1]
+
+    extra: dict[str, Any] = {
+        s.name: (s.config_model, Field(default_factory=s.config_model))
+        for s in specs
+        if s.name not in LayerConfig.model_fields
+    }
+    model = (
+        LayerConfig
+        if not extra
+        else create_model("LayerConfigExtended", __base__=LayerConfig, **extra)
+    )
+    _layer_model_cache = (cache_key, model)
+    return model
+
+
+def config_json_schema() -> dict[str, Any]:
+    """JSON Schema for a ``geoqa.yml`` file (built-in + plugin check keys).
+
+    Useful for editor autocomplete/validation. ``defaults`` and each entry under
+    ``layers`` are typed as the resolved layer-config model so check keys are
+    described precisely.
+    """
+    layer_model = resolve_layer_model()
+    schema_model = create_model(
+        "GeoqaConfig",
+        __base__=_Base,
+        version=(int, Field(default=1)),
+        name=(str, Field(default="geoqa suite")),
+        sources=(list[SourceSpec], Field(default_factory=list)),
+        defaults=(layer_model, Field(default_factory=layer_model)),
+        layers=(dict[str, layer_model], Field(default_factory=dict)),  # type: ignore[valid-type]
+        report=(ReportConfig, Field(default_factory=ReportConfig)),
+    )
+    schema = schema_model.model_json_schema()
+    schema["title"] = "geoqa configuration"
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    return schema
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -154,5 +238,5 @@ def load_suite(path: str | Path) -> Suite:
     suite = Suite.model_validate(raw)
     suite.base_dir = path.resolve().parent
     # Validate the defaults block eagerly so typos surface immediately.
-    LayerConfig.model_validate(_deep_merge({}, suite.defaults))
+    resolve_layer_model().model_validate(_deep_merge({}, suite.defaults))
     return suite

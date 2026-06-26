@@ -2,28 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 
-from geoqa.checks import attributes, crs, duplicates, geometry, topology
-from geoqa.config import LayerConfig, Suite
+from geoqa.config import Suite
 from geoqa.datasource import Layer, iter_layers
+from geoqa.registry import get_registry
 from geoqa.result import CheckResult, LayerReport, Report, Severity, Status
 
 logger = logging.getLogger("geoqa")
-
-# (config attribute on LayerConfig, check module) pairs, in execution order.
-_CHECKS: list[tuple[str, Callable]] = [
-    ("crs", crs.run),
-    ("geometry", geometry.run),
-    ("duplicates", duplicates.run),
-    ("attributes", attributes.run),
-    ("topology", topology.run),
-]
 
 ProgressCb = Callable[[str], None] | None
 
@@ -32,23 +25,67 @@ def run_suite(
     suite: Suite,
     fix_output_dir: str | Path | None = None,
     progress: ProgressCb = None,
+    workers: int = 1,
+    collect_failures: bool = False,
 ) -> Report:
-    """Run every configured check against every layer and return a Report."""
+    """Run every configured check against every layer and return a Report.
+
+    ``workers`` > 1 validates layers concurrently with a thread pool. Geometry
+    checks spend most of their time in GEOS/pandas, which release the GIL, so
+    threads give real speedups while avoiding the pickling/spawn cost (and
+    Windows ``__main__`` pitfalls) of process pools.
+
+    ``collect_failures`` additionally gathers the offending features of each
+    layer into a WGS84 GeoJSON FeatureCollection on ``LayerReport.failures`` (for
+    GeoJSON export and the HTML map).
+    """
     report = Report(suite_name=suite.name)
     fix_dir = Path(fix_output_dir) if fix_output_dir else None
 
-    for layer in iter_layers(suite):
-        if progress:
-            progress(layer.name)
-        logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
-        lr = _run_layer(suite, layer, fix_dir)
-        report.layers.append(lr)
+    layers = list(iter_layers(suite))
+    if workers and workers > 1 and len(layers) > 1:
+        report.layers = _run_layers_parallel(
+            suite, layers, fix_dir, progress, workers, collect_failures
+        )
+    else:
+        for layer in layers:
+            if progress:
+                progress(layer.name)
+            logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
+            report.layers.append(_run_layer(suite, layer, fix_dir, collect_failures))
 
     report.finished_at = _now()
     return report
 
 
-def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
+def _run_layers_parallel(
+    suite: Suite,
+    layers: list[Layer],
+    fix_dir: Path | None,
+    progress: ProgressCb,
+    workers: int,
+    collect_failures: bool,
+) -> list[LayerReport]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: dict[int, LayerReport] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_run_layer, suite, layer, fix_dir, collect_failures): i
+            for i, layer in enumerate(layers)
+        }
+        for future in futures:
+            idx = futures[future]
+            if progress:
+                progress(layers[idx].name)
+            results[idx] = future.result()
+    # Preserve the original (deterministic) layer order in the report.
+    return [results[i] for i in range(len(layers))]
+
+
+def _run_layer(
+    suite: Suite, layer: Layer, fix_dir: Path | None, collect_failures: bool = False
+) -> LayerReport:
     lr = LayerReport(layer=layer.name, source=layer.source)
 
     if layer.error or layer.gdf is None:
@@ -67,7 +104,7 @@ def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
     lr.geometry_type = _dominant_geom_type(gdf)
 
     try:
-        cfg: LayerConfig = suite.config_for_layer(layer.name)
+        cfg = suite.config_for_layer(layer.name)
     except Exception as exc:  # noqa: BLE001
         lr.results.append(
             CheckResult(
@@ -78,23 +115,63 @@ def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
         )
         return lr
 
-    for attr, fn in _CHECKS:
-        sub_cfg = getattr(cfg, attr)
-        lr.results.extend(_timed(fn, gdf, layer.name, layer.source, sub_cfg))
+    for spec in get_registry().specs():
+        sub_cfg = getattr(cfg, spec.name, None)
+        if sub_cfg is None:
+            continue
+        lr.results.extend(
+            _timed(spec.runner, spec.name, gdf, layer.name, layer.source, sub_cfg)
+        )
 
     fixed_total = sum(r.fixed for r in lr.results)
     if fixed_total and fix_dir is not None:
         _write_fixed(gdf, layer, fix_dir, lr)
 
+    if collect_failures:
+        lr.failures = _collect_failures(gdf, lr.results)
+
     return lr
 
 
-def _timed(fn, gdf, layer_name, source, sub_cfg) -> list[CheckResult]:
+def _collect_failures(gdf: gpd.GeoDataFrame, results: list[CheckResult]) -> dict | None:
+    """Build a WGS84 GeoJSON FeatureCollection of offending features.
+
+    Failing checks record the GeoDataFrame index in ``Issue.feature_id`` for
+    spatial problems; we gather those rows and annotate each with the checks it
+    failed. Issues whose id is an attribute value (not an index) are skipped.
+    """
+    failed: dict[Any, set[str]] = {}
+    for r in results:
+        if r.status not in (Status.FAIL, Status.ERROR):
+            continue
+        for issue in r.issues:
+            fid = issue.feature_id
+            if fid is not None:
+                failed.setdefault(fid, set()).add(r.check)
+
+    if not failed:
+        return None
+
+    try:
+        index = gdf.index
+        ids = [fid for fid in failed if fid in index]
+        if not ids:
+            return None
+        subset = gdf.loc[ids, [gdf.geometry.name]].copy()
+        subset["geoqa_failed_checks"] = [", ".join(sorted(failed[i])) for i in ids]
+        if subset.crs is not None and subset.crs.to_epsg() != 4326:
+            subset = subset.to_crs(4326)
+        return json.loads(subset.to_json())
+    except Exception:  # noqa: BLE001 - export is best-effort, never fail a run
+        logger.exception("failed to collect offending features")
+        return None
+
+
+def _timed(fn, check_name, gdf, layer_name, source, sub_cfg) -> list[CheckResult]:
     start = time.perf_counter()
     try:
         results = fn(gdf, layer_name, source, sub_cfg)
     except Exception as exc:  # noqa: BLE001
-        check_name = fn.__module__.split(".")[-1]
         logger.exception("check %r crashed on layer %s", check_name, layer_name)
         results = [
             CheckResult(
