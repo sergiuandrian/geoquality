@@ -9,21 +9,12 @@ from pathlib import Path
 
 import geopandas as gpd
 
-from geoqa.checks import attributes, crs, duplicates, geometry, topology
-from geoqa.config import LayerConfig, Suite
+from geoqa.config import Suite
 from geoqa.datasource import Layer, iter_layers
+from geoqa.registry import get_registry
 from geoqa.result import CheckResult, LayerReport, Report, Severity, Status
 
 logger = logging.getLogger("geoqa")
-
-# (config attribute on LayerConfig, check module) pairs, in execution order.
-_CHECKS: list[tuple[str, Callable]] = [
-    ("crs", crs.run),
-    ("geometry", geometry.run),
-    ("duplicates", duplicates.run),
-    ("attributes", attributes.run),
-    ("topology", topology.run),
-]
 
 ProgressCb = Callable[[str], None] | None
 
@@ -32,20 +23,54 @@ def run_suite(
     suite: Suite,
     fix_output_dir: str | Path | None = None,
     progress: ProgressCb = None,
+    workers: int = 1,
 ) -> Report:
-    """Run every configured check against every layer and return a Report."""
+    """Run every configured check against every layer and return a Report.
+
+    ``workers`` > 1 validates layers concurrently with a thread pool. Geometry
+    checks spend most of their time in GEOS/pandas, which release the GIL, so
+    threads give real speedups while avoiding the pickling/spawn cost (and
+    Windows ``__main__`` pitfalls) of process pools.
+    """
     report = Report(suite_name=suite.name)
     fix_dir = Path(fix_output_dir) if fix_output_dir else None
 
-    for layer in iter_layers(suite):
-        if progress:
-            progress(layer.name)
-        logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
-        lr = _run_layer(suite, layer, fix_dir)
-        report.layers.append(lr)
+    layers = list(iter_layers(suite))
+    if workers and workers > 1 and len(layers) > 1:
+        report.layers = _run_layers_parallel(suite, layers, fix_dir, progress, workers)
+    else:
+        for layer in layers:
+            if progress:
+                progress(layer.name)
+            logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
+            report.layers.append(_run_layer(suite, layer, fix_dir))
 
     report.finished_at = _now()
     return report
+
+
+def _run_layers_parallel(
+    suite: Suite,
+    layers: list[Layer],
+    fix_dir: Path | None,
+    progress: ProgressCb,
+    workers: int,
+) -> list[LayerReport]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: dict[int, LayerReport] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_run_layer, suite, layer, fix_dir): i
+            for i, layer in enumerate(layers)
+        }
+        for future in futures:
+            idx = futures[future]
+            if progress:
+                progress(layers[idx].name)
+            results[idx] = future.result()
+    # Preserve the original (deterministic) layer order in the report.
+    return [results[i] for i in range(len(layers))]
 
 
 def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
@@ -67,7 +92,7 @@ def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
     lr.geometry_type = _dominant_geom_type(gdf)
 
     try:
-        cfg: LayerConfig = suite.config_for_layer(layer.name)
+        cfg = suite.config_for_layer(layer.name)
     except Exception as exc:  # noqa: BLE001
         lr.results.append(
             CheckResult(
@@ -78,9 +103,13 @@ def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
         )
         return lr
 
-    for attr, fn in _CHECKS:
-        sub_cfg = getattr(cfg, attr)
-        lr.results.extend(_timed(fn, gdf, layer.name, layer.source, sub_cfg))
+    for spec in get_registry().specs():
+        sub_cfg = getattr(cfg, spec.name, None)
+        if sub_cfg is None:
+            continue
+        lr.results.extend(
+            _timed(spec.runner, spec.name, gdf, layer.name, layer.source, sub_cfg)
+        )
 
     fixed_total = sum(r.fixed for r in lr.results)
     if fixed_total and fix_dir is not None:
@@ -89,12 +118,11 @@ def _run_layer(suite: Suite, layer: Layer, fix_dir: Path | None) -> LayerReport:
     return lr
 
 
-def _timed(fn, gdf, layer_name, source, sub_cfg) -> list[CheckResult]:
+def _timed(fn, check_name, gdf, layer_name, source, sub_cfg) -> list[CheckResult]:
     start = time.perf_counter()
     try:
         results = fn(gdf, layer_name, source, sub_cfg)
     except Exception as exc:  # noqa: BLE001
-        check_name = fn.__module__.split(".")[-1]
         logger.exception("check %r crashed on layer %s", check_name, layer_name)
         results = [
             CheckResult(

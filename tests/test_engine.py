@@ -41,6 +41,24 @@ def test_progress_callback_invoked(suite_file: Path):
     assert {"parcels", "roads"} <= set(seen)
 
 
+def test_parallel_matches_sequential(suite_file: Path):
+    suite = load_suite(suite_file)
+    seq = run_suite(suite, workers=1)
+    par = run_suite(suite, workers=2)
+
+    # Same layers, same order, same per-check verdicts.
+    assert [layer.layer for layer in seq.layers] == [layer.layer for layer in par.layers]
+    seq_map = {(layer.layer, r.check): r.status for layer in seq.layers for r in layer.results}
+    par_map = {(layer.layer, r.check): r.status for layer in par.layers for r in layer.results}
+    assert seq_map == par_map
+
+
+def test_parallel_progress_invoked(suite_file: Path):
+    seen: list[str] = []
+    run_suite(load_suite(suite_file), workers=2, progress=seen.append)
+    assert {"parcels", "roads"} <= set(seen)
+
+
 def test_load_error_becomes_error_result(tmp_path: Path):
     d = tmp_path / "data"
     d.mkdir()
