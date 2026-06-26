@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/github/license/sergiuandrian/geoquality)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-mkdocs--material-teal)](https://sergiuandrian.github.io/geoquality/)
 
-**Data quality for geospatial data — Great Expectations for GIS.**
+**Quality for geospatial data.**
 
 [Documentation](https://sergiuandrian.github.io/geoquality/) ·
 [Changelog](CHANGELOG.md) ·
