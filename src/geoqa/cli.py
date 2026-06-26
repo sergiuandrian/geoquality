@@ -167,7 +167,7 @@ def run(
             fix_output_dir=fix_output,
             progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
             workers=workers,
-            collect_failures=geojson_out is not None,
+            collect_failures=geojson_out is not None or html is not None,
         )
 
     print_report(report, console=console, verbose=verbose)

@@ -63,6 +63,38 @@ def test_write_html_contains_findings(tmp_path: Path):
     assert "geometry.valid" in html
     assert "FAILED" in html
     assert "Self-intersection" in html
+    # No failures FeatureCollection -> no map assets.
+    assert "leaflet" not in html.lower()
+
+
+def _report_with_failures() -> Report:
+    report = _sample_report()
+    report.layers[0].failures = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "id": "2",
+                "properties": {"geoqa_failed_checks": "geometry.valid"},
+                "geometry": {"type": "Point", "coordinates": [10.0, 50.0]},
+            }
+        ],
+    }
+    return report
+
+
+def test_write_html_embeds_map_when_failures(tmp_path: Path):
+    out = write_html(_report_with_failures(), tmp_path / "r.html")
+    html = out.read_text(encoding="utf-8")
+    assert "leaflet" in html.lower()
+    assert 'id="geoqa-map-0"' in html
+    assert "geoqa_failed_checks" in html
+
+
+def test_write_html_map_can_be_disabled(tmp_path: Path):
+    out = write_html(_report_with_failures(), tmp_path / "r.html", include_map=False)
+    html = out.read_text(encoding="utf-8")
+    assert "leaflet" not in html.lower()
 
 
 def test_print_report_runs():
