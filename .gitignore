@@ -18,6 +18,10 @@ pip-wheel-metadata/
 .pytest_cache/
 .ruff_cache/
 .coverage
+.mypy_cache/
+
+# Docs site build
+site/
 
 # geoqa outputs
 geoqa-report.html

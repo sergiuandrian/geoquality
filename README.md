@@ -1,6 +1,16 @@
 # geoqa
 
-**Data quality for geospatial data".**
+[![CI](https://github.com/sergiuandrian/geoquality/actions/workflows/ci.yml/badge.svg)](https://github.com/sergiuandrian/geoquality/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/sergiuandrian/geoquality?sort=semver)](https://github.com/sergiuandrian/geoquality/releases)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/github/license/sergiuandrian/geoquality)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-mkdocs--material-teal)](https://sergiuandrian.github.io/geoquality/)
+
+**Quality for geospatial data.**
+
+[Documentation](https://sergiuandrian.github.io/geoquality/) ·
+[Changelog](CHANGELOG.md) ·
+[Contributing](CONTRIBUTING.md)
 
 The primitives already exist (`gdf.is_valid`, `make_valid()`, `pyproj`, PostGIS
 `ST_*`, the QGIS Topology Checker). What's missing is the *orchestration*: one
