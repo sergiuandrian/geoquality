@@ -142,6 +142,18 @@ config (YAML + pydantic)  ->  datasource (folder -> layers)  ->  engine
                                             results  ->  reporting (console / JSON / HTML)
 ```
 
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check src tests     # lint
+mypy                     # type-check
+pytest                   # tests + coverage gate (>=80%)
+```
+
+CI runs lint, type-check, tests across Python 3.10-3.12, a dependency audit, and
+an end-to-end smoke run on every push and pull request.
+
 ## License
 
 Apache-2.0.

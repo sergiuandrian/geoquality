@@ -79,7 +79,7 @@ def _expand_files(base: Path, pattern: str | None) -> list[Path]:
     return []
 
 
-def _list_sublayers(file: Path) -> list[str]:
+def _list_sublayers(file: Path) -> list[str | None]:
     try:
         import pyogrio
 

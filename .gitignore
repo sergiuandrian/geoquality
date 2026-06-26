@@ -24,6 +24,7 @@ geoqa-report.html
 geoqa-report.json
 fixed/
 examples/data/
+realtest/
 
 # OS
 .DS_Store
