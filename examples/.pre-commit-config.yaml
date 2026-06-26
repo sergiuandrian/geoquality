@@ -1,7 +1,7 @@
 # Example: drop this into a repo that stores geospatial data to gate commits.
 repos:
-  - repo: https://github.com/your-org/geoqa
-    rev: v0.1.0
+  - repo: https://github.com/sergiuandrian/geoquality
+    rev: v0.2.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]

@@ -109,7 +109,7 @@ class LayerReport:
             return Status.WARN
         return Status.PASS
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, max_issues: int = 50) -> dict[str, Any]:
         return {
             "layer": self.layer,
             "source": self.source,
@@ -117,7 +117,7 @@ class LayerReport:
             "geometry_type": self.geometry_type,
             "crs": self.crs,
             "status": self.status.value,
-            "results": [r.to_dict() for r in self.results],
+            "results": [r.to_dict(max_issues=max_issues) for r in self.results],
         }
 
 
@@ -141,22 +141,33 @@ class Report:
             c[r.status.value] += 1
         return c
 
+    def has_failures(self, threshold: str = "error") -> bool:
+        """Whether the run should be considered failing at the given threshold.
+
+        - ``"error"`` (default): any FAIL (error-severity check) or ERROR (crash).
+        - ``"warn"``: additionally treat WARN (warn-severity check) as failing.
+        - ``"never"``: never fail (report-only).
+        """
+        if threshold == "never":
+            return False
+        bad = {Status.FAIL, Status.ERROR}
+        if threshold == "warn":
+            bad = {Status.WARN, Status.FAIL, Status.ERROR}
+        return any(r.status in bad for r in self.all_results)
+
     @property
     def passed(self) -> bool:
-        """True when there are no error-severity failures."""
-        for r in self.all_results:
-            if r.status in (Status.FAIL, Status.ERROR) and r.severity == Severity.ERROR:
-                return False
-        return True
+        """True when there are no error-severity failures or crashes."""
+        return not self.has_failures("error")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, max_issues: int = 50) -> dict[str, Any]:
         return {
             "suite_name": self.suite_name,
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "passed": self.passed,
             "counts": self.counts,
-            "layers": [layer.to_dict() for layer in self.layers],
+            "layers": [layer.to_dict(max_issues=max_issues) for layer in self.layers],
         }
 
 

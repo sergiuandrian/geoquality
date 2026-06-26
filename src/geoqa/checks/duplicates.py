@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import geopandas as gpd
 
-from geoqa.checks.base import build_issues, result, status_for
+from geoqa.checks.base import build_issues, result, status_for, to_metric
 from geoqa.config import DuplicatesCheck
 from geoqa.result import CheckResult, Issue, Status
+
+_POLYGONAL = {"Polygon", "MultiPolygon"}
 
 CHECK = "duplicates"
 
@@ -51,8 +53,10 @@ def _exact(gdf, layer, source, cfg, n_total) -> CheckResult:
 
 def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
     fz = cfg.fuzzy
-    geom_col = gdf.geometry.name
-    work = gdf[[geom_col]].copy()
+    # IoU and distance only make sense in a metric CRS; reproject up front.
+    metric_gdf, note = to_metric(gdf)
+    geom_col = metric_gdf.geometry.name
+    work = metric_gdf[[geom_col]].copy()
     work = work[work.geometry.notna() & ~work.geometry.is_empty]
 
     try:
@@ -65,7 +69,6 @@ def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
 
     right_col = "index_right" if "index_right" in joined.columns else joined.columns[-1]
     geoms = work.geometry
-    is_poly = str(gdf.geom_type.mode().iloc[0]).endswith("Polygon") if len(gdf) else False
 
     flagged: set = set()
     issues: list[Issue] = []
@@ -74,7 +77,8 @@ def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
         if left_idx == right_idx or not (left_idx < right_idx):
             continue
         a, b = geoms.loc[left_idx], geoms.loc[right_idx]
-        if is_poly:
+        # Decide per pair (not per layer) so mixed-geometry layers behave.
+        if a.geom_type in _POLYGONAL and b.geom_type in _POLYGONAL:
             inter = a.intersection(b).area
             union = a.area + b.area - inter
             score = inter / union if union > 0 else 0.0
@@ -95,18 +99,22 @@ def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
                 if len(issues) < 200:
                     issues.append(
                         Issue(
-                            message=f"near-duplicate within {dist:.3g} units",
+                            message=f"near-duplicate within {dist:.3g} m",
                             feature_id=left_idx,
                             detail={"other": right_idx, "distance": round(float(dist), 6)},
                         )
                     )
 
     n = len(flagged)
+    msg = (
+        "No fuzzy/near duplicates found."
+        if n == 0
+        else f"{n} features look like near-duplicates (predicate={fz.predicate})."
+    )
+    if note:
+        msg = f"{msg} [{note}]"
     return result(
         CHECK + ".fuzzy", layer, source,
         status_for(n, cfg.severity),
-        "No fuzzy/near duplicates found."
-        if n == 0
-        else f"{n} features look like near-duplicates (predicate={fz.predicate}).",
-        severity=cfg.severity, n_total=n_total, n_failed=n, issues=issues,
+        msg, severity=cfg.severity, n_total=n_total, n_failed=n, issues=issues,
     )

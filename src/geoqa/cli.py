@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import enum
+import logging
 from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.logging import RichHandler
 
 from geoqa import __version__
 from geoqa.config import load_suite
@@ -20,7 +23,33 @@ app = typer.Typer(
 console = Console()
 err = Console(stderr=True)
 
-_STARTER = """# geoqa configuration (https://github.com/your-org/geoqa)
+
+class FailOn(str, enum.Enum):
+    """Severity threshold at which a run exits non-zero."""
+
+    error = "error"
+    warn = "warn"
+    never = "never"
+
+
+class LogLevel(str, enum.Enum):
+    debug = "debug"
+    info = "info"
+    warning = "warning"
+    error = "error"
+
+
+def _setup_logging(level: LogLevel, quiet: bool) -> None:
+    effective = logging.ERROR if quiet else getattr(logging, level.value.upper())
+    logging.basicConfig(
+        level=effective,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler(console=err, show_path=False, rich_tracebacks=True)],
+    )
+
+
+_STARTER = """# geoqa configuration (https://github.com/sergiuandrian/geoquality)
 version: 1
 name: "My GIS QA suite"
 
@@ -95,12 +124,22 @@ def run(
     fix_output: Path | None = typer.Option(
         None, "--fix-output", help="Directory to write auto-repaired layers (requires geometry.fix)."
     ),
+    fail_on: FailOn = typer.Option(
+        FailOn.error, "--fail-on", case_sensitive=False,
+        help="Severity that makes the run exit non-zero: error, warn, or never.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show skipped checks too."),
     no_fail: bool = typer.Option(
-        False, "--no-fail", help="Always exit 0, even when checks fail (report only)."
+        False, "--no-fail", help="Alias for --fail-on never (report only, always exit 0)."
     ),
+    log_level: LogLevel = typer.Option(
+        LogLevel.warning, "--log-level", case_sensitive=False, help="Logging verbosity."
+    ),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all but error logs."),
 ) -> None:
     """Run all configured checks and report results."""
+    _setup_logging(log_level, quiet)
+
     try:
         suite = load_suite(config)
     except Exception as exc:  # noqa: BLE001
@@ -111,19 +150,21 @@ def run(
         report = run_suite(
             suite,
             fix_output_dir=fix_output,
-            progress=lambda name: console.log(f"checking {name}"),
+            progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
         )
 
     print_report(report, console=console, verbose=verbose)
 
+    max_issues = suite.report.max_issues_per_check
     if json_out:
-        write_json(report, json_out)
+        write_json(report, json_out, max_issues=max_issues)
         console.print(f"[dim]JSON report -> {json_out}[/]")
     if html:
-        write_html(report, html, title=suite.report.title or suite.name)
+        write_html(report, html, title=suite.report.title or suite.name, max_issues=max_issues)
         console.print(f"[dim]HTML report -> {html}[/]")
 
-    if not report.passed and not no_fail:
+    threshold = "never" if no_fail else fail_on.value
+    if report.has_failures(threshold):
         raise typer.Exit(code=1)
 
 
@@ -137,7 +178,40 @@ def init(
         err.print(f"[yellow]{path} already exists. Use --force to overwrite.[/]")
         raise typer.Exit(code=1)
     path.write_text(_STARTER, encoding="utf-8")
-    console.print(f"[green]Wrote starter config →[/] {path}")
+    console.print(f"[green]Wrote starter config ->[/] {path}")
+
+
+@app.command()
+def validate(
+    config: Path = typer.Option(
+        Path("geoqa.yml"), "--config", "-c", help="Path to the geoqa YAML config."
+    ),
+) -> None:
+    """Validate a geoqa config (schema + every per-layer rule) without running checks."""
+    try:
+        suite = load_suite(config)
+    except Exception as exc:  # noqa: BLE001
+        err.print(f"[bold red]Invalid config:[/] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    # Re-validate the merged config for each explicitly configured layer so typos
+    # in per-layer overrides surface here rather than mid-run.
+    problems: list[str] = []
+    for layer_name in suite.layers:
+        try:
+            suite.config_for_layer(layer_name)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"layer '{layer_name}': {exc}")
+
+    if problems:
+        for p in problems:
+            err.print(f"[bold red]x[/] {p}")
+        raise typer.Exit(code=2)
+
+    console.print(
+        f"[green]Config OK[/] - {len(suite.sources)} source(s), "
+        f"{len(suite.layers)} layer override(s)."
+    )
 
 
 @app.command("list-checks")
@@ -148,7 +222,7 @@ def list_checks() -> None:
         "geometry": "valid, no_empty, no_missing, fix",
         "duplicates": "exact, fuzzy.{enabled,predicate,min_overlap,max_distance}",
         "attributes": "required, not_null, unique, max_null_fraction, domains.{allowed,min,max,regex}",
-        "topology": "no_overlaps, no_gaps, no_dangles",
+        "topology": "no_overlaps, no_gaps, no_dangles, min_area, snap_tolerance",
     }
     from rich.table import Table
 

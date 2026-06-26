@@ -14,28 +14,35 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from geoqa.checks.base import result, status_for
+from geoqa.checks.base import result, status_for, to_metric
 from geoqa.config import TopologyCheck
 from geoqa.result import CheckResult, Issue, Status
 
 CHECK = "topology"
-_SNAP = 6  # coordinate rounding (decimal places) for endpoint matching
+_SNAP = 6  # coordinate rounding (decimal places) when no explicit tolerance is set
 
 
 def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: TopologyCheck) -> list[CheckResult]:
     if not cfg.enabled or gdf.geometry.name not in gdf.columns:
         return []
 
-    results: list[CheckResult] = []
-    valid = gdf[gdf.geometry.notna() & ~gdf.geometry.is_empty]
+    # Topology relies on areas/distances, which are only meaningful in a metric
+    # CRS. Reproject once up front and tag every result with any reprojection note.
+    metric_gdf, note = to_metric(gdf)
+    valid = metric_gdf[metric_gdf.geometry.notna() & ~metric_gdf.geometry.is_empty]
     types = valid.geometry.geom_type
 
+    results: list[CheckResult] = []
     if cfg.no_overlaps:
         results.append(_overlaps(valid, types, layer, source, cfg))
     if cfg.no_gaps:
         results.append(_gaps(valid, types, layer, source, cfg))
     if cfg.no_dangles:
         results.append(_dangles(valid, types, layer, source, cfg))
+
+    if note:
+        for r in results:
+            r.message = f"{r.message} [{note}]"
     return results
 
 
@@ -82,7 +89,7 @@ def _overlaps(valid, types, layer, source, cfg) -> CheckResult:
         except Exception:  # noqa: BLE001
             continue
         area = getattr(inter, "area", 0.0)
-        tol = 1e-9 * max(a.area, b.area, 1.0)
+        tol = max(cfg.min_area, 1e-9 * max(a.area, b.area, 1.0))
         if area > tol:
             flagged.update((left_idx, right_idx))
             if len(issues) < 200:
@@ -115,6 +122,7 @@ def _gaps(valid, types, layer, source, cfg) -> CheckResult:
                 _collect(g)
 
     _collect(merged)
+    holes = [h for h in holes if h.area > cfg.min_area]
     n = len(holes)
     issues = [
         Issue(message=f"gap (interior hole) area={h.area:.6g}", detail={"area": float(h.area)})
@@ -139,24 +147,36 @@ def _dangles(valid, types, layer, source, cfg) -> CheckResult:
     if lines.empty:
         return result(CHECK + ".no_dangles", layer, source, Status.SKIP, "No line features.")
 
+    tol = cfg.snap_tolerance
+
+    def _key(pt: tuple[float, float]) -> tuple[float, float]:
+        # With a tolerance, snap endpoints onto a grid of that size so coincident
+        # points within ``tol`` collapse together; otherwise round to _SNAP places.
+        if tol > 0:
+            return (round(pt[0] / tol), round(pt[1] / tol))
+        return (round(pt[0], _SNAP), round(pt[1], _SNAP))
+
     counts: Counter = Counter()
     where: dict = defaultdict(list)
+    repr_pt: dict = {}
     for idx, geom in lines.geometry.items():
         for ls in _iter_lines(geom):
             coords = list(ls.coords)
             if len(coords) < 2:
                 continue
             for pt in (coords[0], coords[-1]):
-                key = (round(pt[0], _SNAP), round(pt[1], _SNAP))
+                key = _key(pt)
                 counts[key] += 1
                 where[key].append(idx)
+                repr_pt.setdefault(key, (float(pt[0]), float(pt[1])))
 
     dangles = [k for k, c in counts.items() if c == 1]
     issues: list[Issue] = []
     for key in dangles[:200]:
+        x, y = repr_pt[key]
         issues.append(
-            Issue(message=f"dangling endpoint at {key}", feature_id=where[key][0],
-                  detail={"x": key[0], "y": key[1]})
+            Issue(message=f"dangling endpoint at ({x:.3f}, {y:.3f})", feature_id=where[key][0],
+                  detail={"x": x, "y": y})
         )
     n = len(dangles)
     return result(

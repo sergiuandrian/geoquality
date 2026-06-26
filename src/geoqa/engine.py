@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -12,6 +13,8 @@ from geoqa.checks import attributes, crs, duplicates, geometry, topology
 from geoqa.config import LayerConfig, Suite
 from geoqa.datasource import Layer, iter_layers
 from geoqa.result import CheckResult, LayerReport, Report, Severity, Status
+
+logger = logging.getLogger("geoqa")
 
 # (config attribute on LayerConfig, check module) pairs, in execution order.
 _CHECKS: list[tuple[str, Callable]] = [
@@ -37,6 +40,7 @@ def run_suite(
     for layer in iter_layers(suite):
         if progress:
             progress(layer.name)
+        logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
         lr = _run_layer(suite, layer, fix_dir)
         report.layers.append(lr)
 
@@ -90,9 +94,11 @@ def _timed(fn, gdf, layer_name, source, sub_cfg) -> list[CheckResult]:
     try:
         results = fn(gdf, layer_name, source, sub_cfg)
     except Exception as exc:  # noqa: BLE001
+        check_name = fn.__module__.split(".")[-1]
+        logger.exception("check %r crashed on layer %s", check_name, layer_name)
         results = [
             CheckResult(
-                check=fn.__module__.split(".")[-1], layer=layer_name, source=source,
+                check=check_name, layer=layer_name, source=source,
                 status=Status.ERROR, severity=Severity.ERROR,
                 message=f"check raised {type(exc).__name__}: {exc}",
             )

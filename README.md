@@ -93,7 +93,7 @@ for the full key reference.
 - **geometry** — `valid`, `no_empty`, `no_missing`, `fix`
 - **duplicates** — `exact`; `fuzzy.{enabled, predicate, min_overlap, max_distance}`
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
-- **topology** — `no_overlaps`, `no_gaps`, `no_dangles`
+- **topology** — `no_overlaps`, `no_gaps`, `no_dangles`, `min_area`, `snap_tolerance` (metric; layers in degrees are auto-reprojected to UTM)
 
 ## Auto-fixing geometry
 
@@ -109,12 +109,15 @@ With `geometry.fix: true`, invalid geometries are repaired via
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/your-org/geoqa
-    rev: v0.1.0
+  - repo: https://github.com/sergiuandrian/geoquality
+    rev: v0.2.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]
 ```
+
+The `geoqa run` exit code is controlled by `--fail-on {error,warn,never}` (default
+`error`). Use `geoqa validate -c geoqa.yml` to check the config alone.
 
 ## Library use
 

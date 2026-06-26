@@ -76,6 +76,9 @@ class TopologyCheck(_Base):
     no_overlaps: bool = False  # polygons should not overlap each other
     no_gaps: bool = False  # dissolved polygons should have no interior holes
     no_dangles: bool = False  # line endpoints should connect to the network
+    # Tolerances are expressed in metres (data is reprojected to a metric CRS).
+    min_area: float = 0.0  # ignore overlaps/gaps smaller than this (sliver noise)
+    snap_tolerance: float = 0.0  # snap line endpoints within this distance for dangles
 
 
 class LayerConfig(_Base):

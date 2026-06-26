@@ -11,7 +11,9 @@ from geoqa.result import Report
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
-def write_html(report: Report, path: str | Path, title: str | None = None) -> Path:
+def write_html(
+    report: Report, path: str | Path, title: str | None = None, max_issues: int = 50
+) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -22,7 +24,7 @@ def write_html(report: Report, path: str | Path, title: str | None = None) -> Pa
     template = env.get_template("report.html.j2")
     html = template.render(
         report=report,
-        data=report.to_dict(),
+        data=report.to_dict(max_issues=max_issues),
         title=title or report.suite_name,
     )
     path.write_text(html, encoding="utf-8")
