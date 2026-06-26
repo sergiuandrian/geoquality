@@ -161,13 +161,36 @@ geoqa run -c geoqa.yml --fix-output ./fixed
 With `geometry.fix: true`, invalid geometries are repaired via
 `shapely.make_valid()` and the cleaned layer is written to the output folder.
 
+## Reports & integrations
+
+`geoqa run` can emit several report formats in one pass:
+
+```bash
+geoqa run -c geoqa.yml \
+  --html report.html \        # standalone HTML
+  --json report.json \        # machine-readable
+  --junit junit.xml \         # CI-native test report (testsuites/testcases)
+  --geojson-out ./failures    # GeoJSON of offending features (open in QGIS)
+```
+
+- **JUnit XML** maps each check to a `<testcase>` (FAIL → failure, ERROR → error,
+  SKIP → skipped, WARN → `system-out`) so CI dashboards show geoqa results.
+- **GeoJSON failures** writes one `<layer>.failures.geojson` (WGS84) per layer,
+  each feature tagged with the checks it failed.
+
+Generate a JSON Schema for editor autocomplete/validation of `geoqa.yml`:
+
+```bash
+geoqa schema -o geoqa.schema.json
+```
+
 ## CI / pre-commit
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.2.0
+    rev: v0.3.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]

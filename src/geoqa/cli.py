@@ -11,9 +11,15 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 from geoqa import __version__
-from geoqa.config import load_suite
+from geoqa.config import config_json_schema, load_suite
 from geoqa.engine import run_suite
-from geoqa.reporting import print_report, write_html, write_json
+from geoqa.reporting import (
+    print_report,
+    write_geojson_failures,
+    write_html,
+    write_json,
+    write_junit,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -121,6 +127,12 @@ def run(
     json_out: Path | None = typer.Option(
         None, "--json", help="Write a JSON report to this path."
     ),
+    junit_out: Path | None = typer.Option(
+        None, "--junit", help="Write a JUnit XML report (CI-native test reporting)."
+    ),
+    geojson_out: Path | None = typer.Option(
+        None, "--geojson-out", help="Directory to write GeoJSON of offending features."
+    ),
     fix_output: Path | None = typer.Option(
         None, "--fix-output", help="Directory to write auto-repaired layers (requires geometry.fix)."
     ),
@@ -155,6 +167,7 @@ def run(
             fix_output_dir=fix_output,
             progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
             workers=workers,
+            collect_failures=geojson_out is not None,
         )
 
     print_report(report, console=console, verbose=verbose)
@@ -166,6 +179,12 @@ def run(
     if html:
         write_html(report, html, title=suite.report.title or suite.name, max_issues=max_issues)
         console.print(f"[dim]HTML report -> {html}[/]")
+    if junit_out:
+        write_junit(report, junit_out)
+        console.print(f"[dim]JUnit report -> {junit_out}[/]")
+    if geojson_out:
+        written = write_geojson_failures(report, geojson_out)
+        console.print(f"[dim]GeoJSON failures -> {len(written)} file(s) in {geojson_out}[/]")
 
     threshold = "never" if no_fail else fail_on.value
     if report.has_failures(threshold):
@@ -216,6 +235,23 @@ def validate(
         f"[green]Config OK[/] - {len(suite.sources)} source(s), "
         f"{len(suite.layers)} layer override(s)."
     )
+
+
+@app.command()
+def schema(
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Write the JSON Schema here (default: stdout)."
+    ),
+) -> None:
+    """Emit a JSON Schema for geoqa.yml (editor autocomplete / validation)."""
+    import json
+
+    doc = json.dumps(config_json_schema(), indent=2, ensure_ascii=False)
+    if output:
+        output.write_text(doc, encoding="utf-8")
+        console.print(f"[green]Wrote JSON Schema ->[/] {output}")
+    else:
+        print(doc)
 
 
 @app.command("list-checks")

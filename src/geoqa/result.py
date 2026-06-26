@@ -97,6 +97,9 @@ class LayerReport:
     geometry_type: str | None = None
     crs: str | None = None
     results: list[CheckResult] = field(default_factory=list)
+    # Optional GeoJSON FeatureCollection (WGS84) of offending features, populated
+    # when the engine runs with ``collect_failures=True``. Not part of to_dict().
+    failures: dict[str, Any] | None = None
 
     @property
     def status(self) -> Status:

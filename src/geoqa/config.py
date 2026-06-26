@@ -191,6 +191,30 @@ def resolve_layer_model() -> type[LayerConfig]:
     return model
 
 
+def config_json_schema() -> dict[str, Any]:
+    """JSON Schema for a ``geoqa.yml`` file (built-in + plugin check keys).
+
+    Useful for editor autocomplete/validation. ``defaults`` and each entry under
+    ``layers`` are typed as the resolved layer-config model so check keys are
+    described precisely.
+    """
+    layer_model = resolve_layer_model()
+    schema_model = create_model(
+        "GeoqaConfig",
+        __base__=_Base,
+        version=(int, Field(default=1)),
+        name=(str, Field(default="geoqa suite")),
+        sources=(list[SourceSpec], Field(default_factory=list)),
+        defaults=(layer_model, Field(default_factory=layer_model)),
+        layers=(dict[str, layer_model], Field(default_factory=dict)),  # type: ignore[valid-type]
+        report=(ReportConfig, Field(default_factory=ReportConfig)),
+    )
+    schema = schema_model.model_json_schema()
+    schema["title"] = "geoqa configuration"
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    return schema
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge ``override`` into ``base`` (override wins for scalars)."""
     out = dict(base)
