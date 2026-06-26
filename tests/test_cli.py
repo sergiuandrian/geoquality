@@ -25,6 +25,13 @@ def test_list_checks():
     assert result.exit_code == 0
     assert "topology" in result.stdout
     assert "duplicates" in result.stdout
+    assert "built-in" in result.stdout
+    assert "geoqa.checks" in result.stdout
+
+
+def test_run_with_workers(suite_file: Path):
+    result = runner.invoke(app, ["run", "-c", str(suite_file), "--no-fail", "-j", "2"])
+    assert result.exit_code == 0
 
 
 def test_init_writes_config(tmp_path: Path):

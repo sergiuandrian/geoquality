@@ -136,6 +136,9 @@ def run(
         LogLevel.warning, "--log-level", case_sensitive=False, help="Logging verbosity."
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all but error logs."),
+    workers: int = typer.Option(
+        1, "--workers", "-j", min=1, help="Validate this many layers in parallel."
+    ),
 ) -> None:
     """Run all configured checks and report results."""
     _setup_logging(log_level, quiet)
@@ -151,6 +154,7 @@ def run(
             suite,
             fix_output_dir=fix_output,
             progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
+            workers=workers,
         )
 
     print_report(report, console=console, verbose=verbose)
@@ -216,25 +220,26 @@ def validate(
 
 @app.command("list-checks")
 def list_checks() -> None:
-    """List the available checks and their configuration keys."""
-    rows = {
-        "crs": "required, allowed_epsg, expected_epsg",
-        "geometry": "valid, no_empty, no_missing, fix",
-        "duplicates": "exact, fuzzy.{enabled,predicate,min_overlap,max_distance}",
-        "attributes": "required, not_null, unique, max_null_fraction, domains.{allowed,min,max,regex}",
-        "topology": "no_overlaps, no_gaps, no_dangles, min_area, snap_tolerance",
-    }
+    """List the available checks (built-in and plugins) and their config keys."""
     from rich.table import Table
 
+    from geoqa.registry import ENTRY_POINT_GROUP, get_registry
+
+    builtin = {"crs", "geometry", "duplicates", "attributes", "topology"}
     table = Table(title="geoqa checks", show_lines=True)
     table.add_column("Check", style="bold cyan")
+    table.add_column("Source", style="dim")
     table.add_column("Config keys")
-    for name, keys in rows.items():
-        table.add_row(name, keys)
+    for spec in get_registry().specs():
+        origin = "built-in" if spec.name in builtin else "plugin"
+        table.add_row(spec.name, origin, ", ".join(spec.keys()))
     console.print(table)
     console.print(
         "[dim]Every check also supports [bold]enabled[/] and [bold]severity[/] "
         "(error | warn | info).[/]"
+    )
+    console.print(
+        f"[dim]Add your own checks via the [bold]{ENTRY_POINT_GROUP}[/] entry point group.[/]"
     )
 
 

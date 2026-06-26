@@ -95,6 +95,63 @@ for the full key reference.
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
 - **topology** — `no_overlaps`, `no_gaps`, `no_dangles`, `min_area`, `snap_tolerance` (metric; layers in degrees are auto-reprojected to UTM)
 
+## Data sources
+
+Point geoqa at files, folders, or a **PostGIS** database:
+
+```yaml
+sources:
+  - path: "data/"            # folder (expands to every matching file)
+    pattern: "*.gpkg"
+  - path: "data/roads.shp"   # single file
+  - connection: "postgresql://user:pass@host:5432/gis"   # PostGIS
+    table: "public.parcels"  # ...or use `query: "SELECT * FROM ..."`
+    geom_column: "geom"
+    name: "parcels"
+```
+
+PostGIS support needs the optional extra (`pip install -e ".[postgis]"`).
+Credentials in the connection URL are redacted in all reports.
+
+## Parallelism
+
+Validate independent layers concurrently:
+
+```bash
+geoqa run -c geoqa.yml --workers 4   # or -j 4
+```
+
+## Custom checks (plugins)
+
+The built-in checks run through a registry, and third parties can add checks
+**without forking** via the `geoqa.checks` entry point group:
+
+```toml
+# your plugin's pyproject.toml
+[project.entry-points."geoqa.checks"]
+my_check = "my_pkg.checks:SPEC"
+```
+
+```python
+# my_pkg/checks.py
+from geoqa.registry import CheckSpec
+from geoqa.result import CheckResult, Status
+from pydantic import BaseModel
+
+class MyConfig(BaseModel):
+    enabled: bool = True
+    threshold: float = 1.0
+
+def run(gdf, layer, source, cfg) -> list[CheckResult]:
+    return [CheckResult(check="my_check", layer=layer, source=source,
+                        status=Status.PASS, message="ok")]
+
+SPEC = CheckSpec("my_check", run, MyConfig, order=60, description="My rule")
+```
+
+Once installed, `my_check` appears in `geoqa list-checks` and its config key is
+accepted under `defaults`/`layers`.
+
 ## Auto-fixing geometry
 
 ```bash
