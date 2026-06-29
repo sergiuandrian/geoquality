@@ -5,8 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 
 from geoqa.result import CheckResult, Issue, Severity, Status
+
+# Global, metric, equal-area CRS used when a single UTM zone cannot represent the
+# data (wide/near-global extents). EPSG:6933 (WGS 84 / NSIDC EASE-Grid 2.0
+# Global) is valid worldwide and keeps areas comparable for overlap/gap math.
+_GLOBAL_EQUAL_AREA = 6933
 
 
 def to_metric(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str | None]:
@@ -14,9 +20,11 @@ def to_metric(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str | None]:
 
     Areas and distances are only meaningful in a projected CRS. When the layer
     is in a geographic CRS (degrees) we reproject to an estimated local UTM zone
-    so thresholds expressed in metres behave sensibly. Returns the (possibly
-    reprojected) frame and a human-readable note describing what happened (or
-    ``None`` when the data was already projected).
+    so thresholds expressed in metres behave sensibly. For wide/near-global
+    extents a single UTM zone produces distorted or **non-finite** coordinates
+    far from the zone (which crash GEOS overlay/sjoin), so we fall back to a
+    global equal-area CRS. Returns the (possibly reprojected) frame and a
+    human-readable note (or ``None`` when the data was already projected).
     """
     crs = gdf.crs
     if crs is None:
@@ -25,11 +33,28 @@ def to_metric(gdf: gpd.GeoDataFrame) -> tuple[gpd.GeoDataFrame, str | None]:
         if crs.is_geographic:
             metric = gdf.estimate_utm_crs()
             projected = gdf.to_crs(metric)
+            if not _all_finite(projected):
+                # A single UTM zone cannot represent this extent; use a global
+                # equal-area projection that is valid worldwide.
+                projected = gdf.to_crs(_GLOBAL_EQUAL_AREA)
+                return projected, (
+                    f"reprojected to EPSG:{_GLOBAL_EQUAL_AREA} "
+                    "(global equal-area) for metric computations"
+                )
             label = f"EPSG:{metric.to_epsg()}" if metric.to_epsg() else metric.name
             return projected, f"reprojected to {label} for metric computations"
     except Exception:  # noqa: BLE001 - fall back to raw units if estimation fails
         return gdf, "could not reproject to a metric CRS; using raw coordinate units"
     return gdf, None
+
+
+def _all_finite(gdf: gpd.GeoDataFrame) -> bool:
+    """True when the layer's total bounds are finite (no NaN/Inf coordinates)."""
+    try:
+        bounds = gdf.total_bounds
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(np.all(np.isfinite(bounds)))
 
 
 def result(
