@@ -155,7 +155,103 @@ def _overlaps(valid, types, layer, source, cfg) -> CheckResult:
     if algo == "coverage":
         return _overlaps_via_coverage(polys, layer, source, cfg)
 
+    if cfg.tile_size and cfg.tile_size > 0 and len(polys) >= 2:
+        return _overlaps_tiled(polys, layer, source, cfg)
+
     return _overlaps_pairwise(polys, layer, source, cfg)
+
+
+def _tile_buffer(cfg: TopologyCheck) -> float:
+    if cfg.snap_tolerance > 0:
+        return cfg.snap_tolerance
+    if cfg.boundary_tolerance > 0:
+        return cfg.boundary_tolerance
+    return 0.0
+
+
+def _iter_fishnet_tiles(bounds, tile_size: float, buf: float):
+    """Yield buffered tile boxes covering ``bounds``."""
+    minx, miny, maxx, maxy = bounds
+    if not np.all(np.isfinite([minx, miny, maxx, maxy])):
+        return
+    if maxx <= minx or maxy <= miny:
+        yield box(minx - buf, miny - buf, maxx + buf, maxy + buf)
+        return
+    x = minx
+    while x < maxx:
+        y = miny
+        x2 = min(x + tile_size, maxx)
+        while y < maxy:
+            y2 = min(y + tile_size, maxy)
+            yield box(x - buf, y - buf, x2 + buf, y2 + buf)
+            y += tile_size
+        x += tile_size
+
+
+def _overlaps_tiled(polys, layer, source, cfg) -> CheckResult:
+    """Pairwise overlaps on fishnet tiles with an overlap buffer.
+
+    Features near tile edges are evaluated in neighbouring buffered tiles so
+    cross-boundary pairs are not missed when ``buffer >= gap``. Documented
+    caveat: buffer of 0 can miss pairs that straddle tile edges.
+    """
+    buf = _tile_buffer(cfg)
+    flagged: set = set()
+    issues: list[Issue] = []
+    pairs_budget = cfg.max_pairs
+    tiles_run = 0
+    try:
+        for tile in _iter_fishnet_tiles(polys.total_bounds, cfg.tile_size, buf):
+            tiles_run += 1
+            try:
+                hit = polys[polys.intersects(tile)]
+            except Exception:  # noqa: BLE001
+                continue
+            if len(hit) < 2:
+                continue
+            # Temporarily lower max_pairs to remaining budget.
+            sub_cfg = cfg.model_copy(update={"max_pairs": max(pairs_budget, 0)})
+            if pairs_budget <= 0:
+                break
+            sub = _overlaps_pairwise(hit, layer, source, sub_cfg)
+            pairs_budget = max(0, pairs_budget - max(1, sub.n_failed))
+            for issue in sub.issues:
+                other = issue.detail.get("other")
+                key = (issue.row_index, other)
+                if key in {(i.row_index, i.detail.get("other")) for i in issues}:
+                    continue
+                if len(issues) < 200:
+                    detail = dict(issue.detail)
+                    detail["tiled"] = True
+                    issues.append(
+                        Issue(
+                            message=issue.message,
+                            feature_id=issue.feature_id,
+                            row_index=issue.row_index,
+                            detail=detail,
+                        )
+                    )
+                flagged.add(issue.row_index)
+                if other is not None:
+                    flagged.add(other)
+            if sub.status == Status.ERROR:
+                return sub
+    except Exception as exc:  # noqa: BLE001
+        return result(
+            CHECK + ".no_overlaps", layer, source, Status.ERROR,
+            f"tiled overlaps failed: {exc}", severity=cfg.severity,
+        )
+
+    n = len(flagged)
+    msg = (
+        "No overlapping polygons." if n == 0
+        else f"{n} polygon(s) overlap one another."
+    )
+    msg += f" (tiled: {tiles_run} tile(s), buffer={buf:g})"
+    return result(
+        CHECK + ".no_overlaps", layer, source, status_for(n, cfg.severity),
+        msg, severity=cfg.severity, n_total=len(polys), n_failed=n, issues=issues,
+    )
 
 
 def _overlaps_via_coverage(polys, layer, source, cfg) -> CheckResult:

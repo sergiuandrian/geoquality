@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Scale & ops: `chunk_size` file batches, PostGIS `prefer_sql` geometry
+  pushdown, topology `tile_size` fishnet overlaps, fingerprint `cache`, and
+  richer progress events (`--no-cache`).
 - Topology upgrade: vectorized pairwise overlaps, `coverage_area_ratio`,
   `no_coverage_gaps` (AOI/`aoi_bbox`), network dangles with `ignore_boundary`
   + lon/lat details, and `coincident_edges` (almost-adjacent / ragged bounds).

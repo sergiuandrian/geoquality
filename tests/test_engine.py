@@ -37,7 +37,11 @@ def test_run_suite_end_to_end(suite_file: Path):
 
 def test_progress_callback_invoked(suite_file: Path):
     seen: list[str] = []
-    run_suite(load_suite(suite_file), progress=seen.append)
+
+    def _collect(ev):
+        seen.append(ev.layer if hasattr(ev, "layer") else ev)
+
+    run_suite(load_suite(suite_file), progress=_collect)
     assert {"parcels", "roads"} <= set(seen)
 
 
@@ -55,7 +59,11 @@ def test_parallel_matches_sequential(suite_file: Path):
 
 def test_parallel_progress_invoked(suite_file: Path):
     seen: list[str] = []
-    run_suite(load_suite(suite_file), workers=2, progress=seen.append)
+
+    def _collect(ev):
+        seen.append(ev.layer if hasattr(ev, "layer") else ev)
+
+    run_suite(load_suite(suite_file), workers=2, progress=_collect)
     assert {"parcels", "roads"} <= set(seen)
 
 

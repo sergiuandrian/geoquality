@@ -49,7 +49,7 @@ local UTM zone (or EPSG:6933 for near-global extents).
 | `max_pairs` | Cap on pairwise intersection evaluations |
 | `aoi` / `aoi_bbox` | Coverage / boundary AOI (file path, or bbox in **source CRS**) |
 | `ignore_boundary` | Degree-1 endpoints on AOI/extent edge are allowed |
-| `min_degree` | Minimum endpoint degree before flagging a dangle |
+| `tile_size` | Fishnet tile edge (m) for pairwise overlaps; buffer = snap/boundary tol |
 
 ### Heuristics vs coverage (read this)
 
