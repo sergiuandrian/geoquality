@@ -71,6 +71,21 @@ def iter_layers(suite: Suite) -> Iterator[Layer]:
             yield from _load_file(file, spec.layer, spec.name)
 
 
+def _quote_table(table: str) -> str:
+    """Quote a schema-qualified table name for PostgreSQL (``"schema"."table"``).
+
+    Rejects empty parts and characters that would break out of a quoted
+    identifier. Mixed-case and reserved-word names are preserved by quoting.
+    """
+    parts = [p.strip().strip('"') for p in table.split(".")]
+    if not parts or len(parts) > 2 or any(not p for p in parts):
+        raise ValueError(f"invalid table identifier: {table!r}")
+    for part in parts:
+        if any(c in part for c in ';--"\'\\') or "\x00" in part:
+            raise ValueError(f"invalid table identifier: {table!r}")
+    return ".".join(f'"{p}"' for p in parts)
+
+
 def _load_postgis(spec: SourceSpec) -> Layer:
     """Read a single layer from a PostGIS/SQLAlchemy connection."""
     name = spec.name or spec.table or "query"
@@ -83,7 +98,15 @@ def _load_postgis(spec: SourceSpec) -> Layer:
             error="PostGIS sources require SQLAlchemy. Install geoqa[postgis].",
         )
 
-    sql = spec.query or f'SELECT * FROM {spec.table}'
+    if spec.query:
+        sql = spec.query
+    else:
+        try:
+            sql = f"SELECT * FROM {_quote_table(str(spec.table))}"
+        except ValueError as exc:
+            return Layer(name=name, source=redacted, error=str(exc))
+
+    engine = None
     try:
         engine = create_engine(str(spec.connection))
         with engine.connect() as conn:
@@ -91,6 +114,9 @@ def _load_postgis(spec: SourceSpec) -> Layer:
         return Layer(name=name, source=redacted, gdf=gdf)
     except Exception as exc:  # noqa: BLE001
         return Layer(name=name, source=redacted, error=str(exc))
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 def _redact(url: str) -> str:

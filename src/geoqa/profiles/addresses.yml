@@ -1,0 +1,33 @@
+version: 1
+name: "Addresses / POI profile"
+
+sources:
+  - path: "data/"
+    pattern: "*.gpkg"
+
+defaults:
+  crs:
+    required: true
+    allowed_epsg: [4326, 3857, 32633, 32634, 32635]
+  geometry:
+    valid: true
+  duplicates:
+    exact: true
+    severity: warn
+    fuzzy:
+      enabled: true
+      predicate: intersects
+      max_distance: 5.0   # metres — near-duplicate points
+
+layers:
+  addresses:
+    attributes:
+      required: [id]
+      not_null: [id, address]
+      unique: [id]
+      max_null_fraction:
+        postcode: 0.2
+        city: 0.1
+
+report:
+  max_issues_per_check: 100

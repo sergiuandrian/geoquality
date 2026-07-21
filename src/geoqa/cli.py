@@ -195,13 +195,33 @@ def run(
 def init(
     path: Path = typer.Option(Path("geoqa.yml"), "--path", "-p", help="Where to write the config."),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing file."),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="Domain profile to write (parcels, roads, admin_boundaries, addresses).",
+    ),
 ) -> None:
-    """Write a starter geoqa.yml you can edit."""
+    """Write a starter geoqa.yml (or a domain profile) you can edit."""
+    from geoqa.profiles import PROFILES, load_profile
+
     if path.exists() and not force:
         err.print(f"[yellow]{path} already exists. Use --force to overwrite.[/]")
         raise typer.Exit(code=1)
-    path.write_text(_STARTER, encoding="utf-8")
-    console.print(f"[green]Wrote starter config ->[/] {path}")
+
+    if profile is None:
+        text = _STARTER
+        label = "starter config"
+    else:
+        try:
+            text = load_profile(profile)
+        except KeyError as exc:
+            known = ", ".join(sorted(PROFILES))
+            err.print(f"[bold red]Unknown profile:[/] {profile}. Choose one of: {known}")
+            raise typer.Exit(code=2) from exc
+        label = f"profile '{profile}'"
+
+    path.write_text(text, encoding="utf-8")
+    console.print(f"[green]Wrote {label} ->[/] {path}")
 
 
 @app.command()

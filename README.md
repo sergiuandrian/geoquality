@@ -33,15 +33,25 @@ pre-commit hook**. That's geoqa.
 ## Install
 
 ```bash
-pip install -e .
-# geospatial wheels (geopandas/shapely/pyproj/pyogrio) install automatically
+pip install geoqa
+# optional PostGIS support:
+pip install "geoqa[postgis]"
+```
+
+Geospatial wheels (geopandas / shapely / pyproj / pyogrio) install automatically.
+
+For local development of this repository:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ## Quickstart
 
 ```bash
-# 1. Generate the starter config
+# 1. Generate the starter config (or a domain profile)
 geoqa init
+# geoqa init --profile parcels
 
 # 2. (optional) generate messy demo data
 cd examples && python make_sample_data.py && cd ..
@@ -120,7 +130,7 @@ sources:
     name: "parcels"
 ```
 
-PostGIS support needs the optional extra (`pip install -e ".[postgis]"`).
+PostGIS support needs the optional extra (`pip install "geoqa[postgis]"`).
 Credentials in the connection URL are redacted in all reports.
 
 ## Parallelism
@@ -203,7 +213,7 @@ geoqa schema -o geoqa.schema.json
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.3.0
+    rev: v0.5.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]

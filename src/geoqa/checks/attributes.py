@@ -115,18 +115,24 @@ def _domain(gdf, col, rule, layer, source, cfg, n_total) -> CheckResult:
         allowed = set(rule.allowed)
         bad |= present & ~series.isin(allowed)
         parts.append(f"allowed={rule.allowed}")
-    if rule.min is not None:
+    if rule.min is not None or rule.max is not None:
         numeric = pd.to_numeric(series, errors="coerce")
-        bad |= present & (numeric < rule.min)
-        parts.append(f"min={rule.min}")
-    if rule.max is not None:
-        numeric = pd.to_numeric(series, errors="coerce")
-        bad |= present & (numeric > rule.max)
-        parts.append(f"max={rule.max}")
+        # A present value that cannot be parsed as a number violates a numeric domain.
+        bad |= present & numeric.isna()
+        if rule.min is not None:
+            bad |= present & (numeric < rule.min)
+            parts.append(f"min={rule.min}")
+        if rule.max is not None:
+            bad |= present & (numeric > rule.max)
+            parts.append(f"max={rule.max}")
     if rule.regex is not None:
         pattern = re.compile(rule.regex)
-        matched = series.astype("string").map(lambda v: bool(pattern.fullmatch(v)) if v is not None else True)
-        bad |= present & ~matched.fillna(False)
+        # ``na_action="ignore"`` keeps NA out of the callable (so it never sees
+        # pd.NA); nulls are not the regex's concern and are masked out by ``present``.
+        matched = series.astype("string").map(
+            lambda v: bool(pattern.fullmatch(v)), na_action="ignore"
+        )
+        bad |= present & ~matched.fillna(True).astype(bool)
         parts.append(f"regex={rule.regex!r}")
 
     n = int(bad.sum())

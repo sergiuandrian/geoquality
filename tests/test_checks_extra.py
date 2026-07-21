@@ -96,6 +96,26 @@ def test_regex_domain():
     assert res["attributes.domain[code]"].n_failed == 1
 
 
+def test_regex_domain_with_nulls_does_not_crash():
+    # Regression: regex domain crashed with TypeError on NA values because
+    # astype("string") yields pd.NA, which ``v is not None`` did not catch.
+    gdf = _gdf([square(), square(), square()], code=["ABC", None, "12"])
+    cfg = AttributesCheck(domains={"code": DomainRule(regex="^[A-Z]{3}$")})
+    res = {r.check: r for r in attributes.run(gdf, "l", "s", cfg)}
+    # Only "12" violates the pattern; the null is ignored (not the regex's concern).
+    assert res["attributes.domain[code]"].n_failed == 1
+
+
+def test_numeric_domain_flags_non_numeric_values():
+    # Regression: present values that cannot be parsed as numbers silently
+    # passed a numeric min/max domain (coerced to NaN, compared False).
+    gdf = _gdf([square(), square(), square()], lanes=["2", "oops", "99"])
+    cfg = AttributesCheck(domains={"lanes": DomainRule(min=1, max=8)})
+    res = {r.check: r for r in attributes.run(gdf, "l", "s", cfg)}
+    # "oops" (non-numeric) and "99" (>8) are both out of domain.
+    assert res["attributes.domain[lanes]"].n_failed == 2
+
+
 def test_attributes_missing_configured_column_warns():
     gdf = _gdf([square()], a=[1])
     cfg = AttributesCheck(not_null=["nonexistent"])

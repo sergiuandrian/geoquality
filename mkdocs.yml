@@ -30,6 +30,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - Configuration: configuration.md
+  - Profiles: profiles.md
   - Checks: checks.md
   - Data sources: data-sources.md
   - Reports & integrations: reporting.md

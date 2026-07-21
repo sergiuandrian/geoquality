@@ -136,18 +136,19 @@ def _run_layer(
 def _collect_failures(gdf: gpd.GeoDataFrame, results: list[CheckResult]) -> dict | None:
     """Build a WGS84 GeoJSON FeatureCollection of offending features.
 
-    Failing checks record the GeoDataFrame index in ``Issue.feature_id`` for
-    spatial problems; we gather those rows and annotate each with the checks it
-    failed. Issues whose id is an attribute value (not an index) are skipped.
+    Prefer ``Issue.row_index`` (GeoDataFrame index). Fall back to
+    ``Issue.feature_id`` only when it is a valid index label (legacy spatial
+    checks that set feature_id to the row index). Attribute display ids that
+    are not index labels are ignored for geometry collection.
     """
     failed: dict[Any, set[str]] = {}
     for r in results:
         if r.status not in (Status.FAIL, Status.ERROR):
             continue
         for issue in r.issues:
-            fid = issue.feature_id
-            if fid is not None:
-                failed.setdefault(fid, set()).add(r.check)
+            key = issue.row_index if issue.row_index is not None else issue.feature_id
+            if key is not None:
+                failed.setdefault(key, set()).add(r.check)
 
     if not failed:
         return None

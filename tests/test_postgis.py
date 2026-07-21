@@ -50,8 +50,58 @@ def test_load_postgis_happy_path(monkeypatch):
 
     assert layer.error is None
     assert layer.gdf is not None and len(layer.gdf) == 4
-    assert captured["sql"] == "SELECT * FROM parcels"
+    assert captured["sql"] == 'SELECT * FROM "parcels"'
     assert captured["geom_col"] == "geom"
+
+
+def test_quote_table_schema_qualified():
+    from geoqa.datasource import _quote_table
+
+    assert _quote_table("public.state") == '"public"."state"'
+    assert _quote_table('public."MyTable"') == '"public"."MyTable"'
+    assert _quote_table("parcels") == '"parcels"'
+    with pytest.raises(ValueError):
+        _quote_table("public.foo;drop")
+    with pytest.raises(ValueError):
+        _quote_table("")
+
+
+def test_load_postgis_quotes_schema_table(monkeypatch):
+    pytest.importorskip("sqlalchemy")
+    captured = {}
+
+    def fake_read_postgis(sql, con, geom_col):
+        captured["sql"] = sql
+        return make_parcels()
+
+    monkeypatch.setattr(gpd, "read_postgis", fake_read_postgis)
+    spec = SourceSpec(connection="sqlite://", table="public.state", geom_column="geom")
+    layer = _load_postgis(spec)
+    assert layer.error is None
+    assert captured["sql"] == 'SELECT * FROM "public"."state"'
+
+
+def test_load_postgis_disposes_engine(monkeypatch):
+    pytest.importorskip("sqlalchemy")
+    disposed = {"n": 0}
+
+    class FakeEngine:
+        def connect(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _cm():
+                yield object()
+
+            return _cm()
+
+        def dispose(self):
+            disposed["n"] += 1
+
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda *a, **k: FakeEngine())
+    monkeypatch.setattr(gpd, "read_postgis", lambda *a, **k: make_parcels())
+    assert _load_postgis(SourceSpec(connection="sqlite://", table="t")).error is None
+    assert disposed["n"] == 1
 
 
 def test_load_postgis_query_used(monkeypatch):

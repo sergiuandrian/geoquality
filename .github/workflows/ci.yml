@@ -102,7 +102,9 @@ jobs:
           cache: pip
 
       - name: Install package + pip-audit
-        run: python -m pip install --upgrade pip && pip install -e "." pip-audit
+        run: |
+          python -m pip install --upgrade pip "setuptools>=83.0.0"
+          pip install -e "." pip-audit
 
       - name: pip-audit
         # Skip our own (non-PyPI) editable install; audit the dependency tree.

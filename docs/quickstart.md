@@ -1,8 +1,11 @@
 # Quickstart
 
 ```bash
-# 1. Generate the starter config
+pip install geoqa
+
+# 1. Generate a starter config (or pick a domain profile)
 geoqa init
+# geoqa init --profile parcels
 
 # 2. (optional) generate messy demo data
 cd examples && python make_sample_data.py && cd ..
@@ -15,6 +18,19 @@ The console shows a per-layer summary; `geoqa-report.html` is a standalone,
 shareable report with an interactive map of any offending features. The process
 exits non-zero when any `error`-severity check fails — perfect for CI.
 
+## Domain profiles
+
+Skip inventing rules from scratch:
+
+```bash
+geoqa init --profile parcels -p geoqa.yml
+geoqa init --profile roads
+geoqa init --profile admin_boundaries
+geoqa init --profile addresses
+```
+
+See [Profiles](profiles.md) for what each pack checks.
+
 ## Common commands
 
 ```bash
@@ -23,6 +39,7 @@ geoqa validate -c geoqa.yml     # validate the config only
 geoqa list-checks               # list available checks (built-in + plugins)
 geoqa schema -o geoqa.schema.json   # JSON Schema for editor autocomplete
 geoqa init                      # write a starter geoqa.yml
+geoqa init --profile parcels    # write a domain profile
 ```
 
 ## Library use
