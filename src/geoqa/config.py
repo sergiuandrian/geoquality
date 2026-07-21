@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import (
@@ -114,11 +114,24 @@ class TopologyCheck(_Base):
     enabled: bool = False
     severity: Severity = Severity.WARN
     no_overlaps: bool = False  # polygons should not overlap each other
-    no_gaps: bool = False  # dissolved polygons should have no interior holes
+    no_gaps: bool = False  # dissolve-union interior holes (heuristic)
+    no_coverage_gaps: bool = False  # AOI/extent minus union (coverage gaps)
     no_dangles: bool = False  # line endpoints should connect to the network
+    coincident_edges: bool = False  # almost-adjacent / ragged shared boundaries
+    coverage_area_ratio: bool = False  # fast layer self-overlap metric
     # Tolerances are expressed in metres (data is reprojected to a metric CRS).
     min_area: float = 0.0  # ignore overlaps/gaps smaller than this (sliver noise)
     snap_tolerance: float = 0.0  # snap line endpoints within this distance for dangles
+    boundary_tolerance: float = 0.0  # coincident-edge ε (0 → snap_tolerance or 0.01)
+    # Overlap algorithm: auto uses pairwise below pairwise_threshold, else coverage metric.
+    algorithm: Literal["auto", "pairwise", "coverage"] = "auto"
+    pairwise_threshold: int = 5_000
+    max_pairs: int = 100_000  # cap pairwise intersection evaluations
+    # Coverage / dangle AOI (path to polygon file, or bbox in source CRS).
+    aoi: str | None = None
+    aoi_bbox: list[float] | None = None  # [minx, miny, maxx, maxy] in source CRS
+    ignore_boundary: bool = False  # degree-1 endpoints on AOI/extent edge are OK
+    min_degree: int = 2  # endpoints with fewer connections than this are dangles
 
 
 class LayerConfig(_Base):

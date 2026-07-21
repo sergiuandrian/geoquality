@@ -13,7 +13,7 @@ pre-commit hook**. That's geoqa.
 | Validate geometry | `is_valid` / `make_valid` | ✅ + auto-fix |
 | Validate CRS | `gdf.crs` / `gdalinfo` | ✅ allow-list / expected EPSG |
 | Find duplicates | `duplicated()` + `sjoin` | ✅ exact **and** fuzzy |
-| Check topology | PostGIS / QGIS desktop | ✅ overlaps / gaps / dangles |
+| Check topology | PostGIS / QGIS desktop | ✅ overlaps / coverage gaps / dangles / coincident edges |
 | Attribute completeness | `isnull()` | ✅ required / not-null / domain |
 | Run on a folder / PostGIS | — | ✅ |
 | Human-readable report | — | ✅ HTML (+ map) / console / JSON |

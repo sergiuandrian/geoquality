@@ -31,6 +31,9 @@ layers:
       severity: warn
       no_dangles: true
       snap_tolerance: 0.5   # metres
+      ignore_boundary: true
+      # Optional AOI so edge dead-ends are allowed:
+      # aoi: "data/network_aoi.gpkg"
 
 report:
   max_issues_per_check: 100
