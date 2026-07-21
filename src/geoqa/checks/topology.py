@@ -95,6 +95,7 @@ def _overlaps(valid, types, layer, source, cfg) -> CheckResult:
             if len(issues) < 200:
                 issues.append(
                     Issue(message=f"overlap area={area:.6g}", feature_id=left_idx,
+                          row_index=left_idx,
                           detail={"other": right_idx, "area": float(area)})
                 )
 
@@ -175,7 +176,8 @@ def _dangles(valid, types, layer, source, cfg) -> CheckResult:
     for key in dangles[:200]:
         x, y = repr_pt[key]
         issues.append(
-            Issue(message=f"dangling endpoint at ({x:.3f}, {y:.3f})", feature_id=where[key][0],
+            Issue(message=f"dangling endpoint at ({x:.3f}, {y:.3f})",
+                  feature_id=where[key][0], row_index=where[key][0],
                   detail={"x": x, "y": y})
         )
     n = len(dangles)

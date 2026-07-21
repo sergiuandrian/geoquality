@@ -89,6 +89,7 @@ def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
                         Issue(
                             message=f"near-duplicate polygon (IoU={score:.3f})",
                             feature_id=left_idx,
+                            row_index=left_idx,
                             detail={"other": right_idx, "iou": round(score, 4)},
                         )
                     )
@@ -101,6 +102,7 @@ def _fuzzy(gdf, layer, source, cfg, n_total) -> CheckResult:
                         Issue(
                             message=f"near-duplicate within {dist:.3g} m",
                             feature_id=left_idx,
+                            row_index=left_idx,
                             detail={"other": right_idx, "distance": round(float(dist), 6)},
                         )
                     )
