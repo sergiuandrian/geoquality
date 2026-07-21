@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Geometry **repair pipeline** (`geometry.repair`): make_valid, snap,
+  drop_slivers, dissolve_duplicates, file / PostGIS write-back (dry-run
+  default), `--repair-audit`, and `--i-know-what-im-doing` for live UPDATEs.
 ## [0.5.0] - 2026-07-21
 
 ### Added

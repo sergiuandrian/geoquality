@@ -134,7 +134,17 @@ def run(
         None, "--geojson-out", help="Directory to write GeoJSON of offending features."
     ),
     fix_output: Path | None = typer.Option(
-        None, "--fix-output", help="Directory to write auto-repaired layers (requires geometry.fix)."
+        None, "--fix-output",
+        help="Directory to write repaired layers (geometry.fix or geometry.repair).",
+    ),
+    repair_audit: Path | None = typer.Option(
+        None, "--repair-audit",
+        help="Write a JSON audit of repair actions to this path.",
+    ),
+    allow_postgis_write: bool = typer.Option(
+        False,
+        "--i-know-what-im-doing",
+        help="Allow live PostGIS UPDATEs when geometry.repair.postgis.dry_run is false.",
     ),
     fail_on: FailOn = typer.Option(
         FailOn.error, "--fail-on", case_sensitive=False,
@@ -168,6 +178,8 @@ def run(
             progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
             workers=workers,
             collect_failures=geojson_out is not None or html is not None,
+            repair_audit_path=repair_audit,
+            allow_postgis_write=allow_postgis_write,
         )
 
     print_report(report, console=console, verbose=verbose)
@@ -185,6 +197,10 @@ def run(
     if geojson_out:
         written = write_geojson_failures(report, geojson_out)
         console.print(f"[dim]GeoJSON failures -> {len(written)} file(s) in {geojson_out}[/]")
+    if repair_audit and repair_audit.exists():
+        console.print(f"[dim]Repair audit -> {repair_audit}[/]")
+    if fix_output:
+        console.print(f"[dim]Fix output -> {fix_output}[/]")
 
     threshold = "never" if no_fail else fail_on.value
     if report.has_failures(threshold):
