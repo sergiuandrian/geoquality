@@ -24,9 +24,9 @@ pre-commit hook**. That's geoqa.
 ## Install
 
 ```bash
-pip install "geoqa @ git+https://github.com/sergiuandrian/geoquality@v0.4.0"
+pip install geoqa
 # with PostGIS support:
-pip install "geoqa[postgis] @ git+https://github.com/sergiuandrian/geoquality@v0.4.0"
+pip install "geoqa[postgis]"
 ```
 
 See [Quickstart](quickstart.md) to run your first suite.

@@ -6,11 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-21
+
 ### Added
-- PyPI publish workflow on tag push (`build` + Trusted Publishing).
-- `CHANGELOG.md` and `CONTRIBUTING.md`.
-- MkDocs Material documentation site and a GitHub Pages deploy workflow.
-- README badges (CI, release, license, Python versions).
+- Domain **profiles** for parcels, roads, admin boundaries, and addresses
+  (`geoqa init --profile <name>`; also under `examples/profiles/`).
+- `Issue.row_index` so attribute failures (unique/domain) appear on the HTML map
+  and in GeoJSON failure exports.
+- PostGIS table-name quoting for schema-qualified / mixed-case identifiers;
+  SQLAlchemy engines are disposed after each load.
+- PyPI-first install docs; release checklist in `CONTRIBUTING.md`.
+
+### Changed
+- Package version and metadata: **0.5.0**, Development Status **Beta**.
+- Pre-commit / CI docs pin examples to `v0.5.0`.
+- Changelog: items previously listed under Unreleased that shipped in 0.4.0
+  remain documented under that release.
+
+### Fixed
+- Attribute unique/domain offenders were missing from map/GeoJSON collection
+  when `feature_id` was an attribute value rather than a row index.
+- Raw PostGIS `SELECT * FROM {table}` broke on schema-qualified names and did
+  not release connection pools.
 
 ## [0.4.0] - 2026-06-26
 
@@ -24,11 +41,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **GeoJSON-of-failures** export (`--geojson-out`) — offending features per layer.
 - **JSON Schema** for `geoqa.yml` via `geoqa schema`.
 - Interactive **Leaflet map** of offending features embedded in the HTML report.
+- PyPI publish workflow on tag push (`build` + Trusted Publishing).
+- `CHANGELOG.md` and `CONTRIBUTING.md`.
+- MkDocs Material documentation site and a GitHub Pages deploy workflow.
+- README badges (CI, release, license, Python versions).
+- Global equal-area CRS fallback (EPSG:6933) in `to_metric` for near-global
+  extents (avoids GEOS NaN/Inf crashes on world-spanning data).
 
 ### Changed
 - `LayerConfig` is resolved dynamically so plugin check keys validate while
   built-ins keep `extra="forbid"` typo detection.
 - CI bumped to `actions/checkout@v7` and `actions/upload-artifact@v7`.
+
+### Fixed
+- Attribute regex domains crashed on nulls (`pd.NA`); numeric min/max domains
+  silently passed non-numeric present values.
 
 ## [0.2.0] - 2026-06-26
 
@@ -52,7 +79,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and topology over folders of geospatial files, with console/JSON/HTML reports
   and a pre-commit hook.
 
-[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.4.0
 [0.2.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.1.0

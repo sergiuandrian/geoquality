@@ -12,6 +12,8 @@ python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
+End users should install from PyPI (`pip install geoqa`), not an editable tree.
+
 ## Quality gates
 
 All of these run in CI and must pass before merge:
@@ -48,12 +50,25 @@ complete example.
 
 ## Releasing
 
-1. Open a PR `develop -> main`; ensure CI is green.
-2. Bump the version in `pyproject.toml` and `src/geoqa/__init__.py`, and move the
-   `CHANGELOG.md` `Unreleased` items under the new version.
-3. Merge, then tag: `git tag -a vX.Y.Z -m "geoqa vX.Y.Z" && git push origin vX.Y.Z`.
-4. The **Release** workflow builds the sdist/wheel and publishes to PyPI via
-   Trusted Publishing; create the GitHub release with notes from the changelog.
+Checklist for cutting a version (example: `v0.5.0`):
+
+1. On `develop`, ensure CI is green and the working tree is clean.
+2. Bump the version in **both** `pyproject.toml` and `src/geoqa/__init__.py`.
+3. Move `CHANGELOG.md` `[Unreleased]` items under `## [X.Y.Z] - YYYY-MM-DD`,
+   and update the compare links at the bottom of the file.
+4. Update pinned examples that mention a tag (`examples/.pre-commit-config.yaml`,
+   `docs/ci.md`, README pre-commit block) to `vX.Y.Z`.
+5. Open a PR `develop -> main`; merge when CI is green.
+6. From `main`:  
+   `git tag -a vX.Y.Z -m "geoqa vX.Y.Z" && git push origin vX.Y.Z`
+7. Confirm the **Release** GitHub Actions workflow:
+   - Builds sdist/wheel and runs `twine check`
+   - Publishes to PyPI via Trusted Publishing (environment `pypi`)
+8. Create the GitHub Release with notes copied from the changelog.
+9. Smoke-test: `pip install geoqa==X.Y.Z` in a clean venv and run `geoqa --version`.
+
+If Trusted Publishing is not configured yet, set up a PyPI pending publisher for
+this repo’s `Release` workflow before the first tag publish.
 
 ## Code style
 
