@@ -29,7 +29,12 @@ layers:
       enabled: true
       severity: error
       no_overlaps: true
+      no_coverage_gaps: true
+      coincident_edges: true
+      boundary_tolerance: 1.0
       min_area: 1.0
+      # Prefer an explicit AOI for coastal / sparse admin units:
+      # aoi: "data/country_aoi.gpkg"
 
 report:
   max_issues_per_check: 100

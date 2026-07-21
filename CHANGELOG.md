@@ -7,9 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Topology upgrade: vectorized pairwise overlaps, `coverage_area_ratio`,
+  `no_coverage_gaps` (AOI/`aoi_bbox`), network dangles with `ignore_boundary`
+  + lon/lat details, and `coincident_edges` (almost-adjacent / ragged bounds).
 - Geometry **repair pipeline** (`geometry.repair`): make_valid, snap,
   drop_slivers, dissolve_duplicates, file / PostGIS write-back (dry-run
   default), `--repair-audit`, and `--i-know-what-im-doing` for live UPDATEs.
+
+### Changed
+- Docs label dissolve-hole `no_gaps` as a heuristic; prefer `no_coverage_gaps`
+  with an explicit AOI for parcel/admin coverage.
+- Parcels / roads / admin profiles enable the new topology flags.
 ## [0.5.0] - 2026-07-21
 
 ### Added

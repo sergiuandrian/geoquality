@@ -113,7 +113,9 @@ for the full key reference.
 - **geometry** — `valid`, `no_empty`, `no_missing`, `fix`
 - **duplicates** — `exact`; `fuzzy.{enabled, predicate, min_overlap, max_distance}`
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
-- **topology** — `no_overlaps`, `no_gaps`, `no_dangles`, `min_area`, `snap_tolerance` (metric; layers in degrees are auto-reprojected to UTM)
+- **topology** — `no_overlaps`, `no_gaps`, `no_coverage_gaps`, `no_dangles`,
+  `coincident_edges`, `coverage_area_ratio`, `min_area`, `snap_tolerance`,
+  `aoi` / `aoi_bbox` (metric; layers in degrees are auto-reprojected)
 
 ## Data sources
 
