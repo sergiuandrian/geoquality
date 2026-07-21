@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +28,8 @@ def run_suite(
     progress: ProgressCb = None,
     workers: int = 1,
     collect_failures: bool = False,
+    repair_audit_path: str | Path | None = None,
+    allow_postgis_write: bool = False,
 ) -> Report:
     """Run every configured check against every layer and return a Report.
 
@@ -38,21 +41,41 @@ def run_suite(
     ``collect_failures`` additionally gathers the offending features of each
     layer into a WGS84 GeoJSON FeatureCollection on ``LayerReport.failures`` (for
     GeoJSON export and the HTML map).
+
+    ``repair_audit_path`` writes a JSON audit of repair actions when the repair
+    pipeline runs. ``allow_postgis_write`` is required (with ``dry_run: false``)
+    before any live PostGIS UPDATE.
     """
     report = Report(suite_name=suite.name)
     fix_dir = Path(fix_output_dir) if fix_output_dir else None
+    audit_path = Path(repair_audit_path) if repair_audit_path else None
+    audits: dict[str, list[dict]] = {}
+    audit_lock = threading.Lock()
 
     layers = list(iter_layers(suite))
     if workers and workers > 1 and len(layers) > 1:
         report.layers = _run_layers_parallel(
-            suite, layers, fix_dir, progress, workers, collect_failures
+            suite, layers, fix_dir, progress, workers, collect_failures,
+            audits, audit_lock, allow_postgis_write,
         )
     else:
         for layer in layers:
             if progress:
                 progress(layer.name)
             logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
-            report.layers.append(_run_layer(suite, layer, fix_dir, collect_failures))
+            report.layers.append(
+                _run_layer(
+                    suite, layer, fix_dir, collect_failures, audits, audit_lock,
+                    allow_postgis_write,
+                )
+            )
+
+    if audit_path is not None and audits:
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_path.write_text(
+            json.dumps({"suite": suite.name, "layers": audits}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     report.finished_at = _now()
     return report
@@ -65,13 +88,19 @@ def _run_layers_parallel(
     progress: ProgressCb,
     workers: int,
     collect_failures: bool,
+    audits: dict[str, list[dict]],
+    audit_lock: threading.Lock,
+    allow_postgis_write: bool,
 ) -> list[LayerReport]:
     from concurrent.futures import ThreadPoolExecutor
 
     results: dict[int, LayerReport] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_run_layer, suite, layer, fix_dir, collect_failures): i
+            pool.submit(
+                _run_layer, suite, layer, fix_dir, collect_failures, audits,
+                audit_lock, allow_postgis_write,
+            ): i
             for i, layer in enumerate(layers)
         }
         for future in futures:
@@ -79,12 +108,17 @@ def _run_layers_parallel(
             if progress:
                 progress(layers[idx].name)
             results[idx] = future.result()
-    # Preserve the original (deterministic) layer order in the report.
     return [results[i] for i in range(len(layers))]
 
 
 def _run_layer(
-    suite: Suite, layer: Layer, fix_dir: Path | None, collect_failures: bool = False
+    suite: Suite,
+    layer: Layer,
+    fix_dir: Path | None,
+    collect_failures: bool = False,
+    audits: dict[str, list[dict]] | None = None,
+    audit_lock: threading.Lock | None = None,
+    allow_postgis_write: bool = False,
 ) -> LayerReport:
     lr = LayerReport(layer=layer.name, source=layer.source)
 
@@ -123,9 +157,65 @@ def _run_layer(
             _timed(spec.runner, spec.name, gdf, layer.name, layer.source, sub_cfg)
         )
 
-    fixed_total = sum(r.fixed for r in lr.results)
-    if fixed_total and fix_dir is not None:
-        _write_fixed(gdf, layer, fix_dir, lr)
+    from geoqa.repair import effective_repair, run_repair, write_postgis
+
+    repair_cfg = effective_repair(cfg.geometry)
+    if repair_cfg is not None and layer.gdf is not None:
+        repaired, actions = run_repair(gdf, repair_cfg)
+        if audits is not None and actions:
+            payload = [a.to_dict() for a in actions]
+            if audit_lock is not None:
+                with audit_lock:
+                    audits[layer.name] = payload
+            else:
+                audits[layer.name] = payload
+        gdf = repaired
+        layer.gdf = repaired
+        n_actions = len(actions)
+        lr.results.append(
+            CheckResult(
+                check="geometry.repair", layer=layer.name, source=layer.source,
+                status=Status.PASS,
+                severity=Severity.INFO,
+                message=(
+                    f"Repair pipeline applied {n_actions} action(s)."
+                    if n_actions
+                    else "Repair pipeline ran; no geometry changes."
+                ),
+                fixed=n_actions,
+            )
+        )
+        if repair_cfg.write_mode == "file":
+            if fix_dir is not None:
+                _write_fixed(gdf, layer, fix_dir, lr)
+            else:
+                lr.results.append(
+                    CheckResult(
+                        check="geometry.repair.output", layer=layer.name, source=layer.source,
+                        status=Status.WARN, severity=Severity.WARN,
+                        message="Repair ran but --fix-output was not set; nothing written.",
+                    )
+                )
+        elif repair_cfg.write_mode == "postgis":
+            pg = write_postgis(
+                gdf, repair_cfg.postgis, allow_write=allow_postgis_write,
+            )
+            status = (
+                Status.ERROR if "failed" in pg["message"].lower() else Status.PASS
+            )
+            lr.results.append(
+                CheckResult(
+                    check="geometry.repair.postgis", layer=layer.name, source=layer.source,
+                    status=status,
+                    severity=Severity.INFO if status == Status.PASS else Severity.ERROR,
+                    message=pg["message"],
+                )
+            )
+    else:
+        # Legacy path: geometry.fix mutated gdf in-place during the check.
+        fixed_total = sum(r.fixed for r in lr.results)
+        if fixed_total and fix_dir is not None:
+            _write_fixed(gdf, layer, fix_dir, lr)
 
     if collect_failures:
         lr.failures = _collect_failures(gdf, lr.results)

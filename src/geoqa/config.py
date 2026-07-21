@@ -37,13 +37,46 @@ class CrsCheck(_Base):
     expected_epsg: int | None = None
 
 
+class PostgisWriteConfig(_Base):
+    """Optional PostGIS write-back target for the repair pipeline."""
+
+    connection: str | None = None
+    table: str | None = None
+    id_column: str = "id"
+    geom_column: str = "geom"
+    dry_run: bool = True  # must set false + CLI confirm to mutate
+
+
+class RepairConfig(_Base):
+    """Geometry repair pipeline (beyond a single make_valid pass)."""
+
+    enabled: bool = False
+    make_valid: bool = True
+    # Tolerances are metres after to_metric reprojection.
+    snap_tolerance: float = 0.0
+    drop_slivers_area: float = 0.0
+    dissolve_duplicates: bool = False
+    # none = in-memory only; file = GeoPackage sidecar; postgis = UPDATE (dry_run default)
+    write_mode: str = "file"
+    postgis: PostgisWriteConfig = Field(default_factory=PostgisWriteConfig)
+
+    @field_validator("write_mode")
+    @classmethod
+    def _check_write_mode(cls, v: str) -> str:
+        allowed = {"none", "file", "postgis"}
+        if v not in allowed:
+            raise ValueError(f"write_mode must be one of {sorted(allowed)}, got {v!r}")
+        return v
+
+
 class GeometryCheck(_Base):
     enabled: bool = True
     severity: Severity = Severity.ERROR
     valid: bool = True
     no_empty: bool = True
     no_missing: bool = True
-    fix: bool = False  # apply shapely.make_valid and write a *.fixed output
+    fix: bool = False  # legacy: make_valid during the check + *.fixed.gpkg via --fix-output
+    repair: RepairConfig = Field(default_factory=RepairConfig)
 
 
 class FuzzyConfig(_Base):
