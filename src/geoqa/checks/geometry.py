@@ -63,7 +63,7 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: GeometryCheck) -> l
                 reason = explain_validity(geom.loc[idx])
             except Exception:  # noqa: BLE001
                 reason = "invalid geometry"
-            issues.append(Issue(message=reason, feature_id=idx))
+            issues.append(Issue(message=reason, feature_id=idx, row_index=idx))
 
         fixed = 0
         if cfg.fix and invalid_idx:

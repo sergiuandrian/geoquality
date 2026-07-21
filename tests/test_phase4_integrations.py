@@ -55,6 +55,18 @@ def test_failures_reprojected_to_wgs84(suite_file: Path):
     assert abs(pt[0]) <= 180 and abs(pt[1]) <= 90
 
 
+def test_attribute_unique_failures_appear_on_map(suite_file: Path):
+    # Regression: unique/domain issues used attribute values as feature_id, so
+    # they were dropped from the map. row_index must drive geometry collection.
+    report = run_suite(load_suite(suite_file), collect_failures=True)
+    parcels = next(layer for layer in report.layers if layer.layer == "parcels")
+    assert parcels.failures is not None
+    checks = {
+        f["properties"]["geoqa_failed_checks"] for f in parcels.failures["features"]
+    }
+    assert any("attributes.unique" in c for c in checks)
+
+
 # ---- GeoJSON reporter ----
 
 def test_write_geojson_failures(suite_file: Path, tmp_path: Path):

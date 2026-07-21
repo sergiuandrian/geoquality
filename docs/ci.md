@@ -6,7 +6,7 @@
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]
@@ -26,7 +26,7 @@ repos:
 ## GitHub Actions
 
 ```yaml
-- run: pip install "geoqa @ git+https://github.com/sergiuandrian/geoquality@v0.4.0"
+- run: pip install geoqa
 - run: geoqa run -c geoqa.yml --junit geoqa-junit.xml --html geoqa-report.html
 - uses: actions/upload-artifact@v4
   if: always()

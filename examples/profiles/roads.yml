@@ -1,0 +1,36 @@
+version: 1
+name: "Roads / network profile"
+
+sources:
+  - path: "data/"
+    pattern: "*.gpkg"
+
+defaults:
+  crs:
+    required: true
+    allowed_epsg: [4326, 3857, 32633, 32634, 32635]
+  geometry:
+    valid: true
+  duplicates:
+    exact: true
+    severity: warn
+
+layers:
+  roads:
+    attributes:
+      required: [name]
+      not_null: [name]
+      domains:
+        lanes:
+          min: 1
+          max: 8
+        surface:
+          allowed: [asphalt, concrete, gravel, dirt, paved, unpaved, other]
+    topology:
+      enabled: true
+      severity: warn
+      no_dangles: true
+      snap_tolerance: 0.5   # metres
+
+report:
+  max_issues_per_check: 100

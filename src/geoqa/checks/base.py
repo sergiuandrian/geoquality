@@ -97,7 +97,11 @@ def build_issues(
     id_col: str | None = None,
     limit: int = 200,
 ) -> list[Issue]:
-    """Create ``Issue`` objects for a set of failing row indices."""
+    """Create ``Issue`` objects for a set of failing row indices.
+
+    ``row_index`` is always the GeoDataFrame index (for map/GeoJSON collection).
+    ``feature_id`` is the optional attribute display value when ``id_col`` is set.
+    """
     issues: list[Issue] = []
     for idx in list(failed_index)[:limit]:
         feature_id = idx
@@ -106,5 +110,5 @@ def build_issues(
                 feature_id = gdf.at[idx, id_col]
             except Exception:  # noqa: BLE001
                 feature_id = idx
-        issues.append(Issue(message=message, feature_id=feature_id))
+        issues.append(Issue(message=message, feature_id=feature_id, row_index=idx))
     return issues

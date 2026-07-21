@@ -1,0 +1,44 @@
+version: 1
+name: "Parcels / cadastre profile"
+
+# Point sources at your parcel layer(s). Adjust path / PostGIS as needed.
+sources:
+  - path: "data/"
+    pattern: "*.gpkg"
+
+defaults:
+  crs:
+    required: true
+    # Replace with your project CRS allow-list.
+    allowed_epsg: [4326, 3857, 32633, 32634, 32635]
+  geometry:
+    valid: true
+    no_empty: true
+    no_missing: true
+  duplicates:
+    exact: true
+    severity: warn
+    fuzzy:
+      enabled: true
+      predicate: intersects
+      min_overlap: 0.9
+
+# Key = layer name (file stem or GeoPackage / PostGIS layer name).
+layers:
+  parcels:
+    attributes:
+      required: [parcel_id]
+      not_null: [parcel_id]
+      unique: [parcel_id]
+      domains:
+        zone:
+          allowed: [residential, commercial, industrial, agricultural, other]
+    topology:
+      enabled: true
+      severity: error
+      no_overlaps: true
+      no_gaps: true
+      min_area: 0.5   # m² — ignore sliver noise after metric reprojection
+
+report:
+  max_issues_per_check: 100

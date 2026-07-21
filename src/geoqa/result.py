@@ -39,15 +39,22 @@ class Issue:
     """A single offending feature / problem found by a check."""
 
     message: str
-    feature_id: Any = None  # index value or id column
+    feature_id: Any = None  # display id (attribute value or index)
+    # GeoDataFrame index used to collect geometries for maps / GeoJSON export.
+    # Always set this when the issue is tied to a row; ``feature_id`` may be an
+    # attribute value that is not a valid index label.
+    row_index: Any = None
     detail: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "message": self.message,
             "feature_id": _jsonify(self.feature_id),
             "detail": {k: _jsonify(v) for k, v in self.detail.items()},
         }
+        if self.row_index is not None:
+            out["row_index"] = _jsonify(self.row_index)
+        return out
 
 
 @dataclass
