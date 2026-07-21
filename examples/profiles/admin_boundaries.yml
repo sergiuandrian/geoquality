@@ -1,0 +1,35 @@
+version: 1
+name: "Admin boundaries profile"
+
+sources:
+  - path: "data/"
+    pattern: "*.gpkg"
+
+defaults:
+  crs:
+    required: true
+    allowed_epsg: [4326, 3857]
+  geometry:
+    valid: true
+  duplicates:
+    exact: true
+    severity: warn
+
+layers:
+  admin:
+    attributes:
+      required: [name]
+      not_null: [name]
+      unique: [code]
+      domains:
+        # Adjust to your coding scheme (ISO, national ADM codes, …).
+        level:
+          allowed: ["0", "1", "2", "3", country, region, district, municipality]
+    topology:
+      enabled: true
+      severity: error
+      no_overlaps: true
+      min_area: 1.0
+
+report:
+  max_issues_per_check: 100

@@ -48,6 +48,28 @@ def test_init_writes_config(tmp_path: Path):
     assert forced.exit_code == 0
 
 
+def test_init_profile_parcels(tmp_path: Path):
+    target = tmp_path / "parcels.yml"
+    result = runner.invoke(app, ["init", "--profile", "parcels", "-p", str(target)])
+    assert result.exit_code == 0
+    text = target.read_text(encoding="utf-8")
+    assert "Parcels / cadastre" in text
+    assert "no_overlaps" in text
+    # Profile must be a valid suite config.
+    from geoqa.config import load_suite
+
+    suite = load_suite(target)
+    assert suite.name.startswith("Parcels")
+
+
+def test_init_unknown_profile_exits_2(tmp_path: Path):
+    result = runner.invoke(
+        app, ["init", "--profile", "not-a-profile", "-p", str(tmp_path / "x.yml")]
+    )
+    assert result.exit_code == 2
+    assert "Unknown profile" in result.output
+
+
 def test_validate_ok(suite_file: Path):
     result = runner.invoke(app, ["validate", "-c", str(suite_file)])
     assert result.exit_code == 0
