@@ -54,7 +54,7 @@ def test_init_profile_parcels(tmp_path: Path):
     assert result.exit_code == 0
     text = target.read_text(encoding="utf-8")
     assert "Parcels / cadastre" in text
-    assert "no_overlaps" in text
+    assert "cadastre_coverage" in text
     # Profile must be a valid suite config.
     from geoqa.config import load_suite
 

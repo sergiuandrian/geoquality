@@ -34,6 +34,8 @@ nav:
   - Checks: checks.md
   - Repair: repair.md
   - Scale & ops: scale.md
+  - Schema & packs: schema.md
+  - ISO 19157: iso19157.md
   - Data sources: data-sources.md
   - Reports & integrations: reporting.md
   - Custom checks (plugins): plugins.md

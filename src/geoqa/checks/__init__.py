@@ -5,6 +5,14 @@ of :class:`~geoqa.result.CheckResult`. The engine dispatches to them based on
 the resolved per-layer configuration.
 """
 
-from geoqa.checks import attributes, crs, duplicates, geometry, topology
+from geoqa.checks import attributes, crs, duplicates, geometry, metadata, schema, topology
 
-__all__ = ["attributes", "crs", "duplicates", "geometry", "topology"]
+__all__ = [
+    "attributes",
+    "crs",
+    "duplicates",
+    "geometry",
+    "metadata",
+    "schema",
+    "topology",
+]

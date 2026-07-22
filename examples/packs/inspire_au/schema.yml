@@ -1,0 +1,16 @@
+# Schema for the AU starter pack (subset of INSPIRE Administrative Units).
+columns:
+  nationalCode:
+    type: string
+    required: true
+  nationalLevel:
+    type: string
+    required: true
+  name:
+    type: string
+    required: false
+geometry:
+  types: [Polygon, MultiPolygon]
+  srid: 4326
+precision:
+  max_decimal_places: 7

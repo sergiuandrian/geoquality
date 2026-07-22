@@ -72,13 +72,15 @@ class CheckResult:
     issues: list[Issue] = field(default_factory=list)
     duration_s: float = 0.0
     fixed: int = 0  # how many features were auto-fixed
+    # ISO 19157 DQ element tag (informative); see geoqa.iso19157 / docs/iso19157.md
+    dq_element: str | None = None
 
     @property
     def ok(self) -> bool:
         return self.status in (Status.PASS, Status.SKIP)
 
     def to_dict(self, max_issues: int = 50) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "check": self.check,
             "layer": self.layer,
             "source": self.source,
@@ -92,6 +94,9 @@ class CheckResult:
             "issues": [i.to_dict() for i in self.issues[:max_issues]],
             "issues_truncated": max(0, len(self.issues) - max_issues),
         }
+        if self.dq_element:
+            out["dq_element"] = self.dq_element
+        return out
 
 
 @dataclass

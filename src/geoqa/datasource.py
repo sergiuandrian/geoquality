@@ -34,7 +34,7 @@ DEFAULT_EXTENSIONS = (
 MULTILAYER_EXTENSIONS = {".gpkg", ".gml", ".kml"}
 
 # Checks that can run on independent row batches without global context.
-CHUNK_SAFE_CHECKS = frozenset({"crs", "geometry", "attributes"})
+CHUNK_SAFE_CHECKS = frozenset({"crs", "geometry", "attributes", "schema", "metadata"})
 CHUNK_GLOBAL_CHECKS = frozenset({"duplicates", "topology"})
 
 

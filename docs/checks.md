@@ -31,6 +31,9 @@ Coverage / network topology checks — **not** a cadastral-certified topology
 engine. Tolerances are in metres; geographic layers are auto-reprojected to a
 local UTM zone (or EPSG:6933 for near-global extents).
 
+Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
+`admin_coverage` (see [Schema & packs](schema.md)).
+
 ### Flags
 
 | Flag | Meaning |
@@ -84,6 +87,19 @@ topology:
   boundary_tolerance: 0.5
   min_area: 0.5
 ```
+
+## schema
+`columns`, `geometry.types` / `srid`, `precision`, optional `path` to external YAML
+
+Column presence/types, geometry type allow-list, CRS EPSG, coordinate precision.
+See [Schema & packs](schema.md).
+
+## metadata
+`sidecar`, `required_keys`
+
+Lightweight sidecar completeness (XML tags or `key: value` lines) — not ISO 19115.
+
+ISO 19157 DQ element tags on results are documented in [ISO 19157](iso19157.md).
 
 !!! tip
     Every check also supports `enabled` and `severity` (`error` | `warn` | `info`).

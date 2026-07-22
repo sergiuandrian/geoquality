@@ -13,7 +13,7 @@ import geopandas as gpd
 
 from geoqa import cache as geoqa_cache
 from geoqa.checks.sql_postgis import only_sql_safe_checks, sql_geometry_checks
-from geoqa.config import Suite
+from geoqa.config import Suite, check_config_for
 from geoqa.datasource import (
     CHUNK_GLOBAL_CHECKS,
     CHUNK_SAFE_CHECKS,
@@ -227,7 +227,7 @@ def _run_layer(
     for spec in get_registry().specs():
         if skip_geometry and spec.name == "geometry":
             continue
-        sub_cfg = getattr(cfg, spec.name, None)
+        sub_cfg = check_config_for(cfg, spec.name)
         if sub_cfg is None:
             continue
         emit(progress, ProgressEvent(
@@ -341,7 +341,7 @@ def _run_layer_chunked(
             spec = registry.get(name)
             if spec is None:
                 continue
-            sub_cfg = getattr(cfg, name, None)
+            sub_cfg = check_config_for(cfg, name)
             if sub_cfg is None or not getattr(sub_cfg, "enabled", True):
                 continue
             # Attributes with unique need global context — skip unique in chunk mode.
@@ -364,7 +364,7 @@ def _run_layer_chunked(
         spec = registry.get(name)
         if spec is None:
             continue
-        sub_cfg = getattr(cfg, name, None)
+        sub_cfg = check_config_for(cfg, name)
         if sub_cfg is None or not getattr(sub_cfg, "enabled", False):
             continue
         # Topology enabled with no flags → skip silently.
