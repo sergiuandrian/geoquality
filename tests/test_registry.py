@@ -40,7 +40,9 @@ def with_plugin():
 
 def test_builtin_order_and_names():
     reg = registry.build_registry(include_plugins=False)
-    assert reg.names() == ["crs", "geometry", "duplicates", "attributes", "topology"]
+    assert reg.names() == [
+        "crs", "schema", "geometry", "duplicates", "attributes", "topology", "metadata",
+    ]
     assert reg.get("crs") is not None
     assert reg.get("nope") is None
 

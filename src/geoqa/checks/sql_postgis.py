@@ -147,6 +147,10 @@ def only_sql_safe_checks(cfg) -> bool:
         attrs.required or attrs.not_null or attrs.unique or attrs.domains or attrs.max_null_fraction
     ):
         return False
+    if getattr(getattr(cfg, "layer_schema", None), "enabled", False):
+        return False
+    if getattr(getattr(cfg, "metadata", None), "enabled", False):
+        return False
     return bool(getattr(cfg.geometry, "enabled", False))
 
 

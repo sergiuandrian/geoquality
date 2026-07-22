@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Schema / ISO / packs: `schema` and `metadata` checks, ISO 19157 `dq_element`
+  tags on results, topology `ruleset` aliases, and
+  `examples/packs/inspire_au` starter pack (not a certified INSPIRE validator).
 - Scale & ops: `chunk_size` file batches, PostGIS `prefer_sql` geometry
   pushdown, topology `tile_size` fishnet overlaps, fingerprint `cache`, and
   richer progress events (`--no-cache`).

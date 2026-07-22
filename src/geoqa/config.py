@@ -113,6 +113,8 @@ class AttributesCheck(_Base):
 class TopologyCheck(_Base):
     enabled: bool = False
     severity: Severity = Severity.WARN
+    # Named alias expands to flag defaults (explicit keys still win). See RULESETS.
+    ruleset: str | None = None
     no_overlaps: bool = False  # polygons should not overlap each other
     no_gaps: bool = False  # dissolve-union interior holes (heuristic)
     no_coverage_gaps: bool = False  # AOI/extent minus union (coverage gaps)
@@ -136,13 +138,78 @@ class TopologyCheck(_Base):
     ignore_boundary: bool = False  # degree-1 endpoints on AOI/extent edge are OK
     min_degree: int = 2  # endpoints with fewer connections than this are dangles
 
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_ruleset(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        name = data.get("ruleset")
+        if not name:
+            return data
+        from geoqa.topology_rulesets import RULESETS, expand_ruleset
+
+        if name not in RULESETS:
+            raise ValueError(
+                f"unknown topology.ruleset {name!r}; "
+                f"choose one of {sorted(RULESETS)}"
+            )
+        return expand_ruleset(name, data)
+
+
+class ColumnSchema(_Base):
+    """One column in a schema conformance check."""
+
+    type: str | None = None  # string | number | integer | boolean
+    required: bool = False
+    min: float | None = None
+    max: float | None = None
+
+
+class GeometrySchema(_Base):
+    types: list[str] = Field(default_factory=list)  # Polygon, Point, …
+    srid: int | None = None
+
+
+class PrecisionSchema(_Base):
+    max_decimal_places: int | None = None
+    max_xy_resolution: float | None = None  # metres in metric CRS (optional)
+
+
+class SchemaCheck(_Base):
+    enabled: bool = False
+    severity: Severity = Severity.ERROR
+    # Inline schema, or path to a YAML/JSON schema file (relative to suite base_dir).
+    path: str | None = None
+    columns: dict[str, ColumnSchema] = Field(default_factory=dict)
+    geometry: GeometrySchema = Field(default_factory=GeometrySchema)
+    precision: PrecisionSchema = Field(default_factory=PrecisionSchema)
+
+
+class MetadataCheck(_Base):
+    """Lightweight metadata completeness (not a full ISO 19115 validator)."""
+
+    enabled: bool = False
+    severity: Severity = Severity.WARN
+    # Sidecar relative to the layer source file, or absolute path.
+    sidecar: str = "metadata.xml"
+    required_keys: list[str] = Field(
+        default_factory=lambda: ["title", "crs", "date", "lineage"]
+    )
+
 
 class LayerConfig(_Base):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     crs: CrsCheck = Field(default_factory=CrsCheck)
     geometry: GeometryCheck = Field(default_factory=GeometryCheck)
     duplicates: DuplicatesCheck = Field(default_factory=DuplicatesCheck)
     attributes: AttributesCheck = Field(default_factory=AttributesCheck)
     topology: TopologyCheck = Field(default_factory=TopologyCheck)
+    # YAML key remains ``schema:`` (alias); attr avoids clashing with BaseModel.schema.
+    layer_schema: SchemaCheck = Field(
+        default_factory=SchemaCheck, alias="schema"
+    )
+    metadata: MetadataCheck = Field(default_factory=MetadataCheck)
 
 
 class SourceSpec(_Base):
@@ -212,11 +279,27 @@ class Suite(_Base):
         merged = copy.deepcopy(self.defaults)
         override = self.layers.get(layer_name, {})
         merged = _deep_merge(merged, override)
-        return resolve_layer_model().model_validate(merged)
+        cfg = resolve_layer_model().model_validate(merged)
+        # Resolve schema.path against the suite base directory when relative.
+        if cfg.layer_schema.path:
+            resolved = self.resolve_path(cfg.layer_schema.path)
+            cfg.layer_schema = cfg.layer_schema.model_copy(update={"path": str(resolved)})
+        return cfg
 
     def resolve_path(self, path: str) -> Path:
         p = Path(path)
         return p if p.is_absolute() else (self.base_dir / p)
+
+
+def check_config_for(layer_cfg: Any, check_name: str) -> Any:
+    """Return the config object for a registry check name on a layer config.
+
+    Built-in ``schema`` checks use the ``layer_schema`` field (YAML key ``schema``)
+    to avoid clashing with pydantic's ``BaseModel.schema``.
+    """
+    if check_name == "schema":
+        return getattr(layer_cfg, "layer_schema", None)
+    return getattr(layer_cfg, check_name, None)
 
 
 _layer_model_cache: tuple[int, type[LayerConfig]] | None = None
@@ -238,11 +321,14 @@ def resolve_layer_model() -> type[LayerConfig]:
     if _layer_model_cache is not None and _layer_model_cache[0] == cache_key:
         return _layer_model_cache[1]
 
-    extra: dict[str, Any] = {
-        s.name: (s.config_model, Field(default_factory=s.config_model))
-        for s in specs
-        if s.name not in LayerConfig.model_fields
-    }
+    extra: dict[str, Any] = {}
+    for s in specs:
+        if s.name in LayerConfig.model_fields:
+            continue
+        # Built-in schema check uses ``layer_schema`` (YAML alias ``schema``).
+        if s.name == "schema" and "layer_schema" in LayerConfig.model_fields:
+            continue
+        extra[s.name] = (s.config_model, Field(default_factory=s.config_model))
     model = (
         LayerConfig
         if not extra

@@ -1,0 +1,9 @@
+# INSPIRE-style code list (illustrative subset) — nationalLevel
+# Not the official INSPIRE registry export.
+codes:
+  - 1stOrder
+  - 2ndOrder
+  - 3rdOrder
+  - 4thOrder
+  - 5thOrder
+  - 6thOrder

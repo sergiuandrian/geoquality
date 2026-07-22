@@ -82,18 +82,22 @@ class CheckRegistry:
 
 def _builtin_specs() -> list[CheckSpec]:
     """The checks that ship with geoqa, registered in code (not via entry points)."""
-    from geoqa.checks import attributes, crs, duplicates, geometry, topology
+    from geoqa.checks import attributes, crs, duplicates, geometry, metadata, schema, topology
     from geoqa.config import (
         AttributesCheck,
         CrsCheck,
         DuplicatesCheck,
         GeometryCheck,
+        MetadataCheck,
+        SchemaCheck,
         TopologyCheck,
     )
 
     return [
         CheckSpec("crs", crs.run, CrsCheck, order=10,
                   description="Coordinate reference system is defined and allowed"),
+        CheckSpec("schema", schema.run, SchemaCheck, order=15,
+                  description="Schema conformance (columns, geometry types, precision)"),
         CheckSpec("geometry", geometry.run, GeometryCheck, order=20,
                   description="Geometries are valid, non-empty and present"),
         CheckSpec("duplicates", duplicates.run, DuplicatesCheck, order=30,
@@ -102,6 +106,8 @@ def _builtin_specs() -> list[CheckSpec]:
                   description="Attribute completeness, uniqueness and domains"),
         CheckSpec("topology", topology.run, TopologyCheck, order=50,
                   description="No overlaps, gaps or dangling line endpoints"),
+        CheckSpec("metadata", metadata.run, MetadataCheck, order=60,
+                  description="Sidecar metadata presence and required keys"),
     ]
 
 

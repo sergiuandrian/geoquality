@@ -1,0 +1,45 @@
+# geoqa starter pack — INSPIRE Administrative Units (subset)
+#
+# This is a **starter** pack for demos and CI, not a certified INSPIRE validator.
+version: 1
+name: "INSPIRE AU (starter pack)"
+
+sources:
+  - path: "data/au_sample.gpkg"
+
+defaults:
+  crs:
+    required: true
+    allowed_epsg: [4326]
+  geometry:
+    valid: true
+    no_empty: true
+    no_missing: true
+  duplicates:
+    exact: true
+    severity: warn
+  attributes:
+    required: [nationalCode, nationalLevel]
+    not_null: [nationalCode, nationalLevel]
+    unique: [nationalCode]
+    domains:
+      nationalLevel:
+        # See domains/nationalLevel.yml for the documented code list.
+        allowed: ["1stOrder", "2ndOrder", "3rdOrder", "4thOrder", "5thOrder", "6thOrder"]
+
+layers:
+  au_sample:
+    schema:
+      enabled: true
+      path: schema.yml
+    topology:
+      ruleset: admin_coverage
+      min_area: 0.0
+    metadata:
+      enabled: true
+      sidecar: metadata.xml
+      required_keys: [title, crs, date, lineage]
+
+report:
+  title: "INSPIRE AU starter pack"
+  max_issues_per_check: 50
