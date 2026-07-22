@@ -7,7 +7,7 @@ producing a human-readable report. Think "Great Expectations for GIS".
 
 from geoqa.result import CheckResult, LayerReport, Report, Severity, Status
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "CheckResult",

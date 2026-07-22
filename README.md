@@ -218,7 +218,7 @@ geoqa schema -o geoqa.schema.json
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.5.0
+    rev: v0.6.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]

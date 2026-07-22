@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
 ### Added
 - Schema / ISO / packs: `schema` and `metadata` checks, ISO 19157 `dq_element`
   tags on results, topology `ruleset` aliases, and
@@ -21,9 +23,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default), `--repair-audit`, and `--i-know-what-im-doing` for live UPDATEs.
 
 ### Changed
+- Package version: **0.6.0** (still Development Status **Beta**; not 1.0).
+- Pre-commit / CI docs pin examples to `v0.6.0`.
 - Docs label dissolve-hole `no_gaps` as a heuristic; prefer `no_coverage_gaps`
   with an explicit AOI for parcel/admin coverage.
 - Parcels / roads / admin profiles enable the new topology flags.
+
 ## [0.5.0] - 2026-07-21
 
 ### Added
@@ -97,7 +102,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and topology over folders of geospatial files, with console/JSON/HTML reports
   and a pre-commit hook.
 
-[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.6.0
 [0.5.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.4.0
 [0.2.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.2.0

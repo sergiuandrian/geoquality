@@ -50,7 +50,7 @@ complete example.
 
 ## Releasing
 
-Checklist for cutting a version (example: `v0.5.0`):
+Checklist for cutting a version (example: `v0.6.0`):
 
 1. On `develop`, ensure CI is green and the working tree is clean.
 2. Bump the version in **both** `pyproject.toml` and `src/geoqa/__init__.py`.
