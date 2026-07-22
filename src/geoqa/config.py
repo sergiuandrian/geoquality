@@ -127,6 +127,9 @@ class TopologyCheck(_Base):
     algorithm: Literal["auto", "pairwise", "coverage"] = "auto"
     pairwise_threshold: int = 5_000
     max_pairs: int = 100_000  # cap pairwise intersection evaluations
+    # Fishnet tile edge length (metres) for large pairwise overlap passes; 0 = off.
+    # Tiles use an overlap buffer of ``snap_tolerance`` (or boundary_tolerance).
+    tile_size: float = 0.0
     # Coverage / dangle AOI (path to polygon file, or bbox in source CRS).
     aoi: str | None = None
     aoi_bbox: list[float] | None = None  # [minx, miny, maxx, maxy] in source CRS
@@ -155,6 +158,10 @@ class SourceSpec(_Base):
     query: str | None = None  # raw SQL returning a geometry column
     geom_column: str = "geom"  # name of the geometry column to read
 
+    # Scale / ops (Phase F).
+    chunk_size: int | None = None  # row batches for chunk-safe checks (files)
+    prefer_sql: bool = False  # push cheap geometry checks to PostGIS when possible
+
     @model_validator(mode="after")
     def _check_source(self) -> SourceSpec:
         if self.connection:
@@ -166,7 +173,14 @@ class SourceSpec(_Base):
                 raise ValueError("set only one of 'table' or 'query', not both")
         elif not self.path:
             raise ValueError("each source needs a 'path' or a 'connection'")
+        if self.chunk_size is not None and self.chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
         return self
+
+
+class CacheConfig(_Base):
+    enabled: bool = False
+    dir: str = ".geoqa/cache"
 
 
 class ReportConfig(_Base):
@@ -181,6 +195,7 @@ class Suite(_Base):
     defaults: dict[str, Any] = Field(default_factory=dict)
     layers: dict[str, dict[str, Any]] = Field(default_factory=dict)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
 
     # Resolved at load time; not part of the YAML.
     base_dir: Path = Field(default=Path("."), exclude=True)

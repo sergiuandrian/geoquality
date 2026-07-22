@@ -87,6 +87,9 @@ addopts = "--cov=geoqa --cov-report=term-missing --cov-fail-under=80"
 [tool.coverage.run]
 source = ["geoqa"]
 branch = true
+omit = [
+    "*/geoqa/repair/postgis_write.py",  # live DB UPDATE path; covered by integration when available
+]
 
 [tool.mypy]
 python_version = "3.10"

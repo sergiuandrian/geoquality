@@ -6,20 +6,26 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
 
+from geoqa import cache as geoqa_cache
+from geoqa.checks.sql_postgis import only_sql_safe_checks, sql_geometry_checks
 from geoqa.config import Suite
-from geoqa.datasource import Layer, iter_layers
+from geoqa.datasource import (
+    CHUNK_GLOBAL_CHECKS,
+    CHUNK_SAFE_CHECKS,
+    Layer,
+    iter_file_chunks,
+    iter_layers,
+)
+from geoqa.progress import ProgressCb, ProgressEvent, emit
 from geoqa.registry import get_registry
 from geoqa.result import CheckResult, LayerReport, Report, Severity, Status
 
 logger = logging.getLogger("geoqa")
-
-ProgressCb = Callable[[str], None] | None
 
 
 def run_suite(
@@ -30,6 +36,7 @@ def run_suite(
     collect_failures: bool = False,
     repair_audit_path: str | Path | None = None,
     allow_postgis_write: bool = False,
+    use_cache: bool | None = None,
 ) -> Report:
     """Run every configured check against every layer and return a Report.
 
@@ -45,6 +52,8 @@ def run_suite(
     ``repair_audit_path`` writes a JSON audit of repair actions when the repair
     pipeline runs. ``allow_postgis_write`` is required (with ``dry_run: false``)
     before any live PostGIS UPDATE.
+
+    ``use_cache`` overrides ``suite.cache.enabled`` when not ``None``.
     """
     report = Report(suite_name=suite.name)
     fix_dir = Path(fix_output_dir) if fix_output_dir else None
@@ -52,21 +61,29 @@ def run_suite(
     audits: dict[str, list[dict]] = {}
     audit_lock = threading.Lock()
 
-    layers = list(iter_layers(suite))
+    cache_enabled = suite.cache.enabled if use_cache is None else use_cache
+    cache_dir = suite.resolve_path(suite.cache.dir) if cache_enabled else None
+
+    needs_defer = any(
+        (s.chunk_size and s.path) or (s.prefer_sql and s.connection and s.table)
+        for s in suite.sources
+    )
+    layers = list(iter_layers(suite, defer_load=needs_defer))
+
     if workers and workers > 1 and len(layers) > 1:
         report.layers = _run_layers_parallel(
             suite, layers, fix_dir, progress, workers, collect_failures,
-            audits, audit_lock, allow_postgis_write,
+            audits, audit_lock, allow_postgis_write, cache_dir,
         )
     else:
         for layer in layers:
-            if progress:
-                progress(layer.name)
+            emit(progress, ProgressEvent(layer=layer.name, phase="layer",
+                                         message=f"checking {layer.name}"))
             logger.debug("running checks for layer %s (%s)", layer.name, layer.source)
             report.layers.append(
                 _run_layer(
                     suite, layer, fix_dir, collect_failures, audits, audit_lock,
-                    allow_postgis_write,
+                    allow_postgis_write, progress, cache_dir,
                 )
             )
 
@@ -91,6 +108,7 @@ def _run_layers_parallel(
     audits: dict[str, list[dict]],
     audit_lock: threading.Lock,
     allow_postgis_write: bool,
+    cache_dir: Path | None,
 ) -> list[LayerReport]:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -99,14 +117,13 @@ def _run_layers_parallel(
         futures = {
             pool.submit(
                 _run_layer, suite, layer, fix_dir, collect_failures, audits,
-                audit_lock, allow_postgis_write,
+                audit_lock, allow_postgis_write, progress, cache_dir,
             ): i
             for i, layer in enumerate(layers)
         }
         for future in futures:
             idx = futures[future]
-            if progress:
-                progress(layers[idx].name)
+            emit(progress, ProgressEvent(layer=layers[idx].name, phase="layer"))
             results[idx] = future.result()
     return [results[i] for i in range(len(layers))]
 
@@ -119,8 +136,67 @@ def _run_layer(
     audits: dict[str, list[dict]] | None = None,
     audit_lock: threading.Lock | None = None,
     allow_postgis_write: bool = False,
+    progress: ProgressCb = None,
+    cache_dir: Path | None = None,
 ) -> LayerReport:
     lr = LayerReport(layer=layer.name, source=layer.source)
+
+    try:
+        cfg = suite.config_for_layer(layer.name)
+    except Exception as exc:  # noqa: BLE001
+        lr.results.append(
+            CheckResult(
+                check="config", layer=layer.name, source=layer.source,
+                status=Status.ERROR, severity=Severity.ERROR,
+                message=f"Invalid configuration for layer: {exc}",
+            )
+        )
+        return lr
+
+    # Fingerprint cache: skip work when source + config unchanged and prior PASS.
+    cache_key = None
+    if cache_dir is not None:
+        cache_key = _cache_key_for(layer, cfg)
+        entry = geoqa_cache.read_entry(cache_dir, cache_key)
+        if entry is not None and geoqa_cache.layer_passed(entry):
+            emit(progress, ProgressEvent(
+                layer=layer.name, phase="cache", message="cache hit (skip)",
+            ))
+            lr.n_features = int(entry.get("n_features") or 0)
+            lr.crs = entry.get("crs")
+            lr.geometry_type = entry.get("geometry_type")
+            lr.results.append(
+                CheckResult(
+                    check="cache", layer=layer.name, source=layer.source,
+                    status=Status.SKIP, severity=Severity.INFO,
+                    message="Skipped: fingerprint cache hit (prior PASS).",
+                )
+            )
+            return lr
+
+    # SQL-only path: geometry checks without materializing the GeoDataFrame.
+    if (
+        layer.prefer_sql
+        and layer.connection
+        and layer.table
+        and layer.source_spec is not None
+        and only_sql_safe_checks(cfg)
+        and layer.gdf is None
+    ):
+        emit(progress, ProgressEvent(
+            layer=layer.name, phase="check", check="geometry", message="SQL pushdown",
+        ))
+        sql_results, n_rows = sql_geometry_checks(layer.source_spec, layer.name, cfg.geometry)
+        lr.n_features = n_rows
+        lr.results.extend(sql_results)
+        _maybe_write_cache(cache_dir, cache_key, lr)
+        return lr
+
+    # Chunked path for large files.
+    if layer.chunk_size and layer.gdf is None and not layer.error:
+        return _run_layer_chunked(
+            suite, layer, cfg, lr, progress, collect_failures, cache_dir, cache_key,
+        )
 
     if layer.error or layer.gdf is None:
         lr.results.append(
@@ -137,22 +213,26 @@ def _run_layer(
     lr.crs = str(gdf.crs) if gdf.crs is not None else None
     lr.geometry_type = _dominant_geom_type(gdf)
 
-    try:
-        cfg = suite.config_for_layer(layer.name)
-    except Exception as exc:  # noqa: BLE001
-        lr.results.append(
-            CheckResult(
-                check="config", layer=layer.name, source=layer.source,
-                status=Status.ERROR, severity=Severity.ERROR,
-                message=f"Invalid configuration for layer: {exc}",
-            )
-        )
-        return lr
+    # Prefer SQL geometry when configured, then skip in-Python geometry check.
+    skip_geometry = False
+    if layer.prefer_sql and layer.connection and layer.table and layer.source_spec is not None:
+        emit(progress, ProgressEvent(
+            layer=layer.name, phase="check", check="geometry", message="SQL pushdown",
+        ))
+        sql_results, _n = sql_geometry_checks(layer.source_spec, layer.name, cfg.geometry)
+        if sql_results and all(r.status != Status.ERROR for r in sql_results):
+            lr.results.extend(sql_results)
+            skip_geometry = True
 
     for spec in get_registry().specs():
+        if skip_geometry and spec.name == "geometry":
+            continue
         sub_cfg = getattr(cfg, spec.name, None)
         if sub_cfg is None:
             continue
+        emit(progress, ProgressEvent(
+            layer=layer.name, phase="check", check=spec.name,
+        ))
         lr.results.extend(
             _timed(spec.runner, spec.name, gdf, layer.name, layer.source, sub_cfg)
         )
@@ -220,7 +300,173 @@ def _run_layer(
     if collect_failures:
         lr.failures = _collect_failures(gdf, lr.results)
 
+    _maybe_write_cache(cache_dir, cache_key, lr)
     return lr
+
+
+def _run_layer_chunked(
+    suite: Suite,
+    layer: Layer,
+    cfg,
+    lr: LayerReport,
+    progress: ProgressCb,
+    collect_failures: bool,
+    cache_dir: Path | None,
+    cache_key: str | None,
+) -> LayerReport:
+    """Run chunk-safe checks in batches; skip global-context checks with WARN."""
+    registry = {s.name: s for s in get_registry().specs()}
+    merged: dict[str, list[CheckResult]] = {}
+    n_features = 0
+    crs = None
+    geom_type = None
+    first_gdf = None
+
+    chunks = list(iter_file_chunks(layer))
+    n_chunks = max(len(chunks), 1)
+    for i, chunk in enumerate(chunks):
+        n_features += len(chunk)
+        if crs is None and chunk.crs is not None:
+            crs = str(chunk.crs)
+        if geom_type is None:
+            geom_type = _dominant_geom_type(chunk)
+        if first_gdf is None:
+            first_gdf = chunk
+        frac = (i + 1) / n_chunks
+        emit(progress, ProgressEvent(
+            layer=layer.name, phase="chunk", fraction=frac,
+            message=f"chunk {i + 1}/{n_chunks}",
+        ))
+        for name in CHUNK_SAFE_CHECKS:
+            spec = registry.get(name)
+            if spec is None:
+                continue
+            sub_cfg = getattr(cfg, name, None)
+            if sub_cfg is None or not getattr(sub_cfg, "enabled", True):
+                continue
+            # Attributes with unique need global context — skip unique in chunk mode.
+            if name == "attributes" and getattr(sub_cfg, "unique", None):
+                sub_cfg = sub_cfg.model_copy(update={"unique": []})
+            emit(progress, ProgressEvent(
+                layer=layer.name, phase="check", check=name, fraction=frac,
+            ))
+            chunk_results = _timed(
+                spec.runner, name, chunk, layer.name, layer.source, sub_cfg
+            )
+            merged.setdefault(name, []).extend(chunk_results)
+
+    lr.n_features = n_features
+    lr.crs = crs
+    lr.geometry_type = geom_type
+    lr.results.extend(_merge_chunk_results(merged))
+
+    for name in CHUNK_GLOBAL_CHECKS:
+        spec = registry.get(name)
+        if spec is None:
+            continue
+        sub_cfg = getattr(cfg, name, None)
+        if sub_cfg is None or not getattr(sub_cfg, "enabled", False):
+            continue
+        # Topology enabled with no flags → skip silently.
+        if name == "topology" and not any(
+            getattr(sub_cfg, f, False)
+            for f in (
+                "no_overlaps", "no_gaps", "no_coverage_gaps", "no_dangles",
+                "coincident_edges", "coverage_area_ratio",
+            )
+        ):
+            continue
+        if name == "duplicates" and not (
+            getattr(sub_cfg, "exact", False)
+            or getattr(getattr(sub_cfg, "fuzzy", None), "enabled", False)
+        ):
+            continue
+        lr.results.append(
+            CheckResult(
+                check=name, layer=layer.name, source=layer.source,
+                status=Status.SKIP, severity=Severity.WARN,
+                message=(
+                    f"{name} skipped under chunk_size={layer.chunk_size}: needs full "
+                    "layer context (disable chunk_size or run a global pass)."
+                ),
+            )
+        )
+
+    if collect_failures and first_gdf is not None:
+        # Best-effort: only first chunk geometries available without full load.
+        lr.failures = _collect_failures(first_gdf, lr.results)
+
+    _maybe_write_cache(cache_dir, cache_key, lr)
+    return lr
+
+
+def _merge_chunk_results(merged: dict[str, list[CheckResult]]) -> list[CheckResult]:
+    """Combine per-chunk check results into one result per check name."""
+    out: list[CheckResult] = []
+    for _group, results in merged.items():
+        by_check: dict[str, list[CheckResult]] = {}
+        for r in results:
+            by_check.setdefault(r.check, []).append(r)
+        for check, parts in by_check.items():
+            n_total = sum(p.n_total for p in parts)
+            n_failed = sum(p.n_failed for p in parts)
+            issues = []
+            for p in parts:
+                issues.extend(p.issues)
+                if len(issues) >= 200:
+                    issues = issues[:200]
+                    break
+            # Worst status wins (ERROR > FAIL > WARN > PASS > SKIP).
+            rank = {
+                Status.ERROR: 5, Status.FAIL: 4, Status.WARN: 3,
+                Status.PASS: 1, Status.SKIP: 0,
+            }
+            status = max((p.status for p in parts), key=lambda s: rank.get(s, 0))
+            severity = parts[0].severity
+            if n_failed and status in (Status.PASS, Status.SKIP):
+                status = Status.FAIL if severity == Severity.ERROR else Status.WARN
+            msg = parts[-1].message
+            if len(parts) > 1:
+                msg = f"{msg} (merged from {len(parts)} chunk(s))"
+            out.append(
+                CheckResult(
+                    check=check, layer=parts[0].layer, source=parts[0].source,
+                    status=status, severity=severity, message=msg,
+                    n_total=n_total, n_failed=n_failed, issues=issues,
+                    duration_s=sum(p.duration_s for p in parts),
+                )
+            )
+    return out
+
+
+def _cache_key_for(layer: Layer, cfg) -> str:
+    fragment = cfg.model_dump(mode="json") if hasattr(cfg, "model_dump") else {}
+    return geoqa_cache.fingerprint(
+        source=layer.source,
+        file_stat=geoqa_cache.file_stat(layer.source),
+        config_fragment=fragment,
+    )
+
+
+def _maybe_write_cache(cache_dir: Path | None, cache_key: str | None, lr: LayerReport) -> None:
+    if cache_dir is None or cache_key is None:
+        return
+    ok = all(r.status in (Status.PASS, Status.SKIP) for r in lr.results) and bool(lr.results)
+    # Do not cache pure cache-skip markers as a new PASS.
+    if len(lr.results) == 1 and lr.results[0].check == "cache":
+        return
+    geoqa_cache.write_entry(
+        cache_dir,
+        cache_key,
+        {
+            "ok": ok,
+            "n_features": lr.n_features,
+            "crs": lr.crs,
+            "geometry_type": lr.geometry_type,
+            "layer": lr.layer,
+            "source": lr.source,
+        },
+    )
 
 
 def _collect_failures(gdf: gpd.GeoDataFrame, results: list[CheckResult]) -> dict | None:
