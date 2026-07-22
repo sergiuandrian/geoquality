@@ -68,7 +68,10 @@ def result(
     n_failed: int = 0,
     issues: list[Issue] | None = None,
     fixed: int = 0,
+    dq_element: str | None = None,
 ) -> CheckResult:
+    from geoqa.iso19157 import dq_element_for
+
     return CheckResult(
         check=check,
         layer=layer,
@@ -80,6 +83,7 @@ def result(
         n_failed=n_failed,
         issues=issues or [],
         fixed=fixed,
+        dq_element=dq_element if dq_element is not None else dq_element_for(check),
     )
 
 

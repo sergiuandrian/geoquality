@@ -27,10 +27,11 @@ layers:
         surface:
           allowed: [asphalt, concrete, gravel, dirt, paved, unpaved, other]
     topology:
-      enabled: true
+      ruleset: network
       severity: warn
-      no_dangles: true
       snap_tolerance: 0.5   # metres
+      # Optional AOI so edge dead-ends are allowed:
+      # aoi: "data/network_aoi.gpkg"
 
 report:
   max_issues_per_check: 100

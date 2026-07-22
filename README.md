@@ -113,7 +113,12 @@ for the full key reference.
 - **geometry** — `valid`, `no_empty`, `no_missing`, `fix`
 - **duplicates** — `exact`; `fuzzy.{enabled, predicate, min_overlap, max_distance}`
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
-- **topology** — `no_overlaps`, `no_gaps`, `no_dangles`, `min_area`, `snap_tolerance` (metric; layers in degrees are auto-reprojected to UTM)
+- **topology** — `no_overlaps`, `no_gaps`, `no_coverage_gaps`, `no_dangles`,
+  `coincident_edges`, `coverage_area_ratio`, `ruleset`, `min_area`, `snap_tolerance`,
+  `aoi` / `aoi_bbox` (metric; layers in degrees are auto-reprojected)
+- **schema** — columns, geometry types/SRID, coordinate precision
+- **metadata** — sidecar presence + required keys (lightweight)
+
 
 ## Data sources
 
@@ -213,7 +218,7 @@ geoqa schema -o geoqa.schema.json
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.5.0
+    rev: v0.6.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]

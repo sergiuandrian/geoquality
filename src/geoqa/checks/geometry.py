@@ -66,7 +66,10 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: GeometryCheck) -> l
             issues.append(Issue(message=reason, feature_id=idx, row_index=idx))
 
         fixed = 0
-        if cfg.fix and invalid_idx:
+        # In-place make_valid only for legacy ``fix: true`` when the full repair
+        # pipeline is not enabled (pipeline owns make_valid when repair.enabled).
+        do_inplace_fix = cfg.fix and not cfg.repair.enabled
+        if do_inplace_fix and invalid_idx:
             col = gdf.geometry.name
             for idx in invalid_idx:
                 try:
@@ -80,12 +83,17 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: GeometryCheck) -> l
             msg = "All geometries are valid."
         elif fixed:
             msg = f"{n} invalid geometr(ies) found; {fixed} repaired with make_valid()."
+        elif cfg.repair.enabled and cfg.repair.make_valid:
+            msg = (
+                f"{n} invalid geometr(ies) found "
+                "(will be repaired by geometry.repair pipeline)."
+            )
         else:
             msg = f"{n} invalid geometr(ies) found (use geometry.fix: true to repair)."
         results.append(
             result(
                 CHECK + ".valid", layer, source,
-                status_for(n - fixed if cfg.fix else n, cfg.severity),
+                status_for(n - fixed if do_inplace_fix else n, cfg.severity),
                 msg, severity=cfg.severity, n_total=n_total, n_failed=n,
                 issues=issues, fixed=fixed,
             )

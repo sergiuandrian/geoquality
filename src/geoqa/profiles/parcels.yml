@@ -34,11 +34,14 @@ layers:
         zone:
           allowed: [residential, commercial, industrial, agricultural, other]
     topology:
-      enabled: true
+      ruleset: cadastre_coverage
       severity: error
-      no_overlaps: true
-      no_gaps: true
+      no_gaps: true          # keep dissolve-hole heuristic alongside coverage
+      boundary_tolerance: 0.5
       min_area: 0.5   # m² — ignore sliver noise after metric reprojection
+      # Set an AOI for coverage gaps (total_bounds alone false-positives on sparse data):
+      # aoi: "data/aoi.gpkg"
+      # aoi_bbox: [minx, miny, maxx, maxy]
 
 report:
   max_issues_per_check: 100

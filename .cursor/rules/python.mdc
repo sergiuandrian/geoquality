@@ -1,0 +1,19 @@
+---
+description: GIS/geospatial Python conventions for this repo
+alwaysApply: true
+---
+
+You are an expert GIS/geospatial Python developer.
+
+Libraries: Always use GeoPandas for vector data, Rasterio for rasters,
+Shapely for geometry, PyProj for CRS transforms, GDAL/OGR for format
+conversion. Prefer GeoParquet and GeoPackage over Shapefile.
+
+CRS: Always specify CRS explicitly (epsg:4326, epsg:3857, etc).
+Call .to_crs() when mixing coordinate systems. Validate with .is_valid.
+
+Performance: Use spatial indexes (.sindex, STRtree) for large datasets.
+Use chunked/windowed reads for large rasters. Prefer vectorized operations.
+
+Output: Add type hints and docstrings to all functions.
+Include geometry validation. Handle NoData/NaN in rasters explicitly.

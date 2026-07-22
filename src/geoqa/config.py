@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import (
@@ -37,13 +37,46 @@ class CrsCheck(_Base):
     expected_epsg: int | None = None
 
 
+class PostgisWriteConfig(_Base):
+    """Optional PostGIS write-back target for the repair pipeline."""
+
+    connection: str | None = None
+    table: str | None = None
+    id_column: str = "id"
+    geom_column: str = "geom"
+    dry_run: bool = True  # must set false + CLI confirm to mutate
+
+
+class RepairConfig(_Base):
+    """Geometry repair pipeline (beyond a single make_valid pass)."""
+
+    enabled: bool = False
+    make_valid: bool = True
+    # Tolerances are metres after to_metric reprojection.
+    snap_tolerance: float = 0.0
+    drop_slivers_area: float = 0.0
+    dissolve_duplicates: bool = False
+    # none = in-memory only; file = GeoPackage sidecar; postgis = UPDATE (dry_run default)
+    write_mode: str = "file"
+    postgis: PostgisWriteConfig = Field(default_factory=PostgisWriteConfig)
+
+    @field_validator("write_mode")
+    @classmethod
+    def _check_write_mode(cls, v: str) -> str:
+        allowed = {"none", "file", "postgis"}
+        if v not in allowed:
+            raise ValueError(f"write_mode must be one of {sorted(allowed)}, got {v!r}")
+        return v
+
+
 class GeometryCheck(_Base):
     enabled: bool = True
     severity: Severity = Severity.ERROR
     valid: bool = True
     no_empty: bool = True
     no_missing: bool = True
-    fix: bool = False  # apply shapely.make_valid and write a *.fixed output
+    fix: bool = False  # legacy: make_valid during the check + *.fixed.gpkg via --fix-output
+    repair: RepairConfig = Field(default_factory=RepairConfig)
 
 
 class FuzzyConfig(_Base):
@@ -80,20 +113,103 @@ class AttributesCheck(_Base):
 class TopologyCheck(_Base):
     enabled: bool = False
     severity: Severity = Severity.WARN
+    # Named alias expands to flag defaults (explicit keys still win). See RULESETS.
+    ruleset: str | None = None
     no_overlaps: bool = False  # polygons should not overlap each other
-    no_gaps: bool = False  # dissolved polygons should have no interior holes
+    no_gaps: bool = False  # dissolve-union interior holes (heuristic)
+    no_coverage_gaps: bool = False  # AOI/extent minus union (coverage gaps)
     no_dangles: bool = False  # line endpoints should connect to the network
+    coincident_edges: bool = False  # almost-adjacent / ragged shared boundaries
+    coverage_area_ratio: bool = False  # fast layer self-overlap metric
     # Tolerances are expressed in metres (data is reprojected to a metric CRS).
     min_area: float = 0.0  # ignore overlaps/gaps smaller than this (sliver noise)
     snap_tolerance: float = 0.0  # snap line endpoints within this distance for dangles
+    boundary_tolerance: float = 0.0  # coincident-edge ε (0 → snap_tolerance or 0.01)
+    # Overlap algorithm: auto uses pairwise below pairwise_threshold, else coverage metric.
+    algorithm: Literal["auto", "pairwise", "coverage"] = "auto"
+    pairwise_threshold: int = 5_000
+    max_pairs: int = 100_000  # cap pairwise intersection evaluations
+    # Fishnet tile edge length (metres) for large pairwise overlap passes; 0 = off.
+    # Tiles use an overlap buffer of ``snap_tolerance`` (or boundary_tolerance).
+    tile_size: float = 0.0
+    # Coverage / dangle AOI (path to polygon file, or bbox in source CRS).
+    aoi: str | None = None
+    aoi_bbox: list[float] | None = None  # [minx, miny, maxx, maxy] in source CRS
+    ignore_boundary: bool = False  # degree-1 endpoints on AOI/extent edge are OK
+    min_degree: int = 2  # endpoints with fewer connections than this are dangles
+
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_ruleset(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        name = data.get("ruleset")
+        if not name:
+            return data
+        from geoqa.topology_rulesets import RULESETS, expand_ruleset
+
+        if name not in RULESETS:
+            raise ValueError(
+                f"unknown topology.ruleset {name!r}; "
+                f"choose one of {sorted(RULESETS)}"
+            )
+        return expand_ruleset(name, data)
+
+
+class ColumnSchema(_Base):
+    """One column in a schema conformance check."""
+
+    type: str | None = None  # string | number | integer | boolean
+    required: bool = False
+    min: float | None = None
+    max: float | None = None
+
+
+class GeometrySchema(_Base):
+    types: list[str] = Field(default_factory=list)  # Polygon, Point, …
+    srid: int | None = None
+
+
+class PrecisionSchema(_Base):
+    max_decimal_places: int | None = None
+    max_xy_resolution: float | None = None  # metres in metric CRS (optional)
+
+
+class SchemaCheck(_Base):
+    enabled: bool = False
+    severity: Severity = Severity.ERROR
+    # Inline schema, or path to a YAML/JSON schema file (relative to suite base_dir).
+    path: str | None = None
+    columns: dict[str, ColumnSchema] = Field(default_factory=dict)
+    geometry: GeometrySchema = Field(default_factory=GeometrySchema)
+    precision: PrecisionSchema = Field(default_factory=PrecisionSchema)
+
+
+class MetadataCheck(_Base):
+    """Lightweight metadata completeness (not a full ISO 19115 validator)."""
+
+    enabled: bool = False
+    severity: Severity = Severity.WARN
+    # Sidecar relative to the layer source file, or absolute path.
+    sidecar: str = "metadata.xml"
+    required_keys: list[str] = Field(
+        default_factory=lambda: ["title", "crs", "date", "lineage"]
+    )
 
 
 class LayerConfig(_Base):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     crs: CrsCheck = Field(default_factory=CrsCheck)
     geometry: GeometryCheck = Field(default_factory=GeometryCheck)
     duplicates: DuplicatesCheck = Field(default_factory=DuplicatesCheck)
     attributes: AttributesCheck = Field(default_factory=AttributesCheck)
     topology: TopologyCheck = Field(default_factory=TopologyCheck)
+    # YAML key remains ``schema:`` (alias); attr avoids clashing with BaseModel.schema.
+    layer_schema: SchemaCheck = Field(
+        default_factory=SchemaCheck, alias="schema"
+    )
+    metadata: MetadataCheck = Field(default_factory=MetadataCheck)
 
 
 class SourceSpec(_Base):
@@ -109,6 +225,10 @@ class SourceSpec(_Base):
     query: str | None = None  # raw SQL returning a geometry column
     geom_column: str = "geom"  # name of the geometry column to read
 
+    # Scale / ops (Phase F).
+    chunk_size: int | None = None  # row batches for chunk-safe checks (files)
+    prefer_sql: bool = False  # push cheap geometry checks to PostGIS when possible
+
     @model_validator(mode="after")
     def _check_source(self) -> SourceSpec:
         if self.connection:
@@ -120,7 +240,14 @@ class SourceSpec(_Base):
                 raise ValueError("set only one of 'table' or 'query', not both")
         elif not self.path:
             raise ValueError("each source needs a 'path' or a 'connection'")
+        if self.chunk_size is not None and self.chunk_size < 1:
+            raise ValueError("chunk_size must be >= 1")
         return self
+
+
+class CacheConfig(_Base):
+    enabled: bool = False
+    dir: str = ".geoqa/cache"
 
 
 class ReportConfig(_Base):
@@ -135,6 +262,7 @@ class Suite(_Base):
     defaults: dict[str, Any] = Field(default_factory=dict)
     layers: dict[str, dict[str, Any]] = Field(default_factory=dict)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
 
     # Resolved at load time; not part of the YAML.
     base_dir: Path = Field(default=Path("."), exclude=True)
@@ -151,11 +279,27 @@ class Suite(_Base):
         merged = copy.deepcopy(self.defaults)
         override = self.layers.get(layer_name, {})
         merged = _deep_merge(merged, override)
-        return resolve_layer_model().model_validate(merged)
+        cfg = resolve_layer_model().model_validate(merged)
+        # Resolve schema.path against the suite base directory when relative.
+        if cfg.layer_schema.path:
+            resolved = self.resolve_path(cfg.layer_schema.path)
+            cfg.layer_schema = cfg.layer_schema.model_copy(update={"path": str(resolved)})
+        return cfg
 
     def resolve_path(self, path: str) -> Path:
         p = Path(path)
         return p if p.is_absolute() else (self.base_dir / p)
+
+
+def check_config_for(layer_cfg: Any, check_name: str) -> Any:
+    """Return the config object for a registry check name on a layer config.
+
+    Built-in ``schema`` checks use the ``layer_schema`` field (YAML key ``schema``)
+    to avoid clashing with pydantic's ``BaseModel.schema``.
+    """
+    if check_name == "schema":
+        return getattr(layer_cfg, "layer_schema", None)
+    return getattr(layer_cfg, check_name, None)
 
 
 _layer_model_cache: tuple[int, type[LayerConfig]] | None = None
@@ -177,11 +321,14 @@ def resolve_layer_model() -> type[LayerConfig]:
     if _layer_model_cache is not None and _layer_model_cache[0] == cache_key:
         return _layer_model_cache[1]
 
-    extra: dict[str, Any] = {
-        s.name: (s.config_model, Field(default_factory=s.config_model))
-        for s in specs
-        if s.name not in LayerConfig.model_fields
-    }
+    extra: dict[str, Any] = {}
+    for s in specs:
+        if s.name in LayerConfig.model_fields:
+            continue
+        # Built-in schema check uses ``layer_schema`` (YAML alias ``schema``).
+        if s.name == "schema" and "layer_schema" in LayerConfig.model_fields:
+            continue
+        extra[s.name] = (s.config_model, Field(default_factory=s.config_model))
     model = (
         LayerConfig
         if not extra

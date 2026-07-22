@@ -1,6 +1,8 @@
-"""Tests for topology checks (overlaps, gaps, dangles) and CRS-awareness."""
+"""Tests for topology checks (overlaps, gaps, coverage, dangles, coincident)."""
 
 from __future__ import annotations
+
+import time
 
 import pytest
 
@@ -110,3 +112,177 @@ def test_topology_global_extent_does_not_error():
     assert res["topology.no_overlaps"].status != Status.ERROR
     assert res["topology.no_gaps"].status != Status.ERROR
     assert "equal-area" in res["topology.no_overlaps"].message
+
+
+def test_coverage_gaps_with_aoi_bbox():
+    # Two tiles leave a 10×10 hole inside a 30×30 AOI.
+    left = box(0, 0, 10, 30)
+    right = box(20, 0, 30, 30)
+    gdf = gpd.GeoDataFrame({"geometry": [left, right]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True, no_coverage_gaps=True, aoi_bbox=[0, 0, 30, 30], min_area=1.0
+        ),
+    ))
+    assert res["topology.no_coverage_gaps"].status == Status.WARN
+    assert res["topology.no_coverage_gaps"].n_failed >= 1
+
+
+def test_coverage_gaps_complete_aoi_passes():
+    gdf = gpd.GeoDataFrame({"geometry": [box(0, 0, 30, 30)]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_coverage_gaps=True, aoi_bbox=[0, 0, 30, 30]),
+    ))
+    assert res["topology.no_coverage_gaps"].status == Status.PASS
+
+
+def test_t_junction_network_no_internal_dangles():
+    # Connected T: three lines meet; only outer ends are degree-1.
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (10, 0)]),
+                LineString([(10, 0), (20, 0)]),
+                LineString([(10, 0), (10, 10)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(gdf, "l", "s", TopologyCheck(enabled=True, no_dangles=True)))
+    # Outer ends: (0,0), (20,0), (10,10) — three dangles; junction is degree 3.
+    assert res["topology.no_dangles"].n_failed == 3
+
+
+def test_ignore_boundary_allows_extent_ends():
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (10, 0)]),
+                LineString([(10, 0), (20, 0)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    # Without ignore_boundary: ends at 0 and 20 are dangles.
+    plain = _by_check(topology.run(gdf, "l", "s", TopologyCheck(enabled=True, no_dangles=True)))
+    assert plain["topology.no_dangles"].n_failed == 2
+
+    # With ignore_boundary + AOI matching the line extent, edge ends are OK.
+    ignored = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True,
+            no_dangles=True,
+            ignore_boundary=True,
+            snap_tolerance=0.1,
+            aoi_bbox=[0, -1, 20, 1],
+        ),
+    ))
+    assert ignored["topology.no_dangles"].status == Status.PASS
+
+
+def test_ignore_boundary_still_flags_internal_spur():
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (20, 0)]),
+                LineString([(10, 0), (10, 5)]),  # spur ending inside AOI
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True,
+            no_dangles=True,
+            ignore_boundary=True,
+            snap_tolerance=0.1,
+            aoi_bbox=[0, -1, 20, 10],
+        ),
+    ))
+    assert res["topology.no_dangles"].n_failed >= 1
+    detail = res["topology.no_dangles"].issues[0].detail
+    assert detail.get("degree", 0) < 2
+
+
+def test_dangle_issues_include_lon_lat_for_geographic():
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [LineString([(0, 0), (0.01, 0)])]},
+        crs="EPSG:4326",
+    )
+    res = _by_check(topology.run(gdf, "l", "s", TopologyCheck(enabled=True, no_dangles=True)))
+    detail = res["topology.no_dangles"].issues[0].detail
+    assert "lon" in detail and "lat" in detail
+    assert "degree" in detail
+
+
+def test_coincident_almost_adjacent_gap():
+    # 1 m gap between shared sides.
+    a = box(0, 0, 10, 10)
+    b = box(11, 0, 21, 10)
+    gdf = gpd.GeoDataFrame({"geometry": [a, b]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, coincident_edges=True, boundary_tolerance=1.5),
+    ))
+    assert res["topology.coincident_edges"].status == Status.WARN
+    assert res["topology.coincident_edges"].issues[0].detail["kind"] == "almost_adjacent"
+
+
+def test_coincident_shared_edge_passes():
+    a = box(0, 0, 10, 10)
+    b = box(10, 0, 20, 10)
+    gdf = gpd.GeoDataFrame({"geometry": [a, b]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, coincident_edges=True, boundary_tolerance=0.5),
+    ))
+    assert res["topology.coincident_edges"].status == Status.PASS
+
+
+def test_coverage_area_ratio_detects_overlap():
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [square(0, 0), square(5, 0)]}, crs="EPSG:3857"
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s", TopologyCheck(enabled=True, coverage_area_ratio=True)
+    ))
+    assert res["topology.coverage_area_ratio"].status == Status.WARN
+
+
+def test_overlaps_algorithm_coverage():
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [square(0, 0), square(5, 0)]}, crs="EPSG:3857"
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_overlaps=True, algorithm="coverage"),
+    ))
+    assert res["topology.no_overlaps"].status == Status.WARN
+    assert res["topology.no_overlaps"].issues[0].detail["algorithm"] == "coverage"
+
+
+def test_pairwise_50k_synthetic_budget():
+    # Acceptance: ~50k non-overlapping parcels finish without ERROR in a CI-ish budget.
+    n = 50_000
+    # Grid of 1×1 squares with 1 m gaps — no overlaps; stress the spatial index path.
+    cols = 250
+    geoms = [box(i % cols * 2, i // cols * 2, i % cols * 2 + 1, i // cols * 2 + 1) for i in range(n)]
+    gdf = gpd.GeoDataFrame({"geometry": geoms}, crs="EPSG:3857")
+    t0 = time.perf_counter()
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True,
+            no_overlaps=True,
+            algorithm="pairwise",
+            max_pairs=200_000,
+        ),
+    ))
+    elapsed = time.perf_counter() - t0
+    assert res["topology.no_overlaps"].status == Status.PASS
+    # Soft budget: keep generous for CI runners; fail only on pathological slowdown.
+    assert elapsed < 120.0, f"50k pairwise overlaps took {elapsed:.1f}s"

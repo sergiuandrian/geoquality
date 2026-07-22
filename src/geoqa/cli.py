@@ -55,6 +55,42 @@ def _setup_logging(level: LogLevel, quiet: bool) -> None:
     )
 
 
+def _make_progress(con: Console, *, quiet: bool, log_level: LogLevel):
+    """Rich progress for TTY; log lines otherwise. Accepts ProgressEvent or str."""
+    from geoqa.progress import ProgressEvent
+
+    _ = log_level  # reserved for future verbosity gating
+    log = logging.getLogger("geoqa")
+    use_rich = bool(con.is_terminal) and not quiet
+
+    def _cb(event) -> None:
+        if isinstance(event, str):
+            layer, phase, check, frac, msg = event, "layer", None, None, event
+        elif isinstance(event, ProgressEvent):
+            layer = event.layer
+            phase = event.phase
+            check = event.check
+            frac = event.fraction
+            msg = event.message or ""
+        else:
+            return
+        if use_rich and phase in ("layer", "chunk"):
+            extra = f" {frac:.0%}" if frac is not None else ""
+            detail = f" · {check}" if check else ""
+            con.log(f"[cyan]{layer}[/]{detail}{extra} {msg}".rstrip())
+        else:
+            bits = [f"checking {layer}"]
+            if check:
+                bits.append(f"[{check}]")
+            if frac is not None:
+                bits.append(f"{frac:.0%}")
+            if msg and msg != layer:
+                bits.append(msg)
+            log.info(" ".join(bits))
+
+    return _cb
+
+
 _STARTER = """# geoqa configuration (https://github.com/sergiuandrian/geoquality)
 version: 1
 name: "My GIS QA suite"
@@ -134,7 +170,17 @@ def run(
         None, "--geojson-out", help="Directory to write GeoJSON of offending features."
     ),
     fix_output: Path | None = typer.Option(
-        None, "--fix-output", help="Directory to write auto-repaired layers (requires geometry.fix)."
+        None, "--fix-output",
+        help="Directory to write repaired layers (geometry.fix or geometry.repair).",
+    ),
+    repair_audit: Path | None = typer.Option(
+        None, "--repair-audit",
+        help="Write a JSON audit of repair actions to this path.",
+    ),
+    allow_postgis_write: bool = typer.Option(
+        False,
+        "--i-know-what-im-doing",
+        help="Allow live PostGIS UPDATEs when geometry.repair.postgis.dry_run is false.",
     ),
     fail_on: FailOn = typer.Option(
         FailOn.error, "--fail-on", case_sensitive=False,
@@ -151,6 +197,9 @@ def run(
     workers: int = typer.Option(
         1, "--workers", "-j", min=1, help="Validate this many layers in parallel."
     ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Ignore fingerprint cache even if suite.cache.enabled."
+    ),
 ) -> None:
     """Run all configured checks and report results."""
     _setup_logging(log_level, quiet)
@@ -161,13 +210,18 @@ def run(
         err.print(f"[bold red]Config error:[/] {exc}")
         raise typer.Exit(code=2) from exc
 
+    progress_cb = _make_progress(console, quiet=quiet, log_level=log_level)
+
     with console.status("[bold]Running checks..."):
         report = run_suite(
             suite,
             fix_output_dir=fix_output,
-            progress=lambda name: logging.getLogger("geoqa").info("checking %s", name),
+            progress=progress_cb,
             workers=workers,
             collect_failures=geojson_out is not None or html is not None,
+            repair_audit_path=repair_audit,
+            allow_postgis_write=allow_postgis_write,
+            use_cache=False if no_cache else None,
         )
 
     print_report(report, console=console, verbose=verbose)
@@ -185,6 +239,10 @@ def run(
     if geojson_out:
         written = write_geojson_failures(report, geojson_out)
         console.print(f"[dim]GeoJSON failures -> {len(written)} file(s) in {geojson_out}[/]")
+    if repair_audit and repair_audit.exists():
+        console.print(f"[dim]Repair audit -> {repair_audit}[/]")
+    if fix_output:
+        console.print(f"[dim]Fix output -> {fix_output}[/]")
 
     threshold = "never" if no_fail else fail_on.value
     if report.has_failures(threshold):
