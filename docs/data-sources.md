@@ -29,3 +29,7 @@ pip install "geoqa[postgis]"
 
 Provide a SQLAlchemy `connection` URL plus either a `table` or a raw `query`.
 Credentials embedded in the URL are **redacted** in every report.
+
+Optional `prefer_sql: true` pushes cheap geometry probes to PostGIS (see
+[Scale & ops](scale.md)). Fingerprint **cache never applies** to connection
+sources — table edits would not invalidate a file-style mtime key.

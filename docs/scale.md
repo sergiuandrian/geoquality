@@ -33,8 +33,15 @@ sources:
 With `prefer_sql: true` and a `table` (not a free-form `query`), geometry
 `valid` / `no_empty` / `no_missing` run as `ST_IsValid` / `ST_IsEmpty` / null
 probes in the database. If the layer config only enables those geometry checks
-(no CRS/duplicates/topology/attribute rules), geoqa **does not** materialize a
-GeoDataFrame.
+(no CRS/duplicates/topology/attribute rules, and no `fix`/`repair`), geoqa
+**does not** materialize a GeoDataFrame.
+
+**Issue IDs:** SQL pushdown reports offenders by PostgreSQL `ctid` (in
+`Issue.feature_id` / detail). In-Python geometry checks use GeoDataFrame row
+indices. Do not mix the two when joining failures back to source rows.
+
+**Repair:** if `geometry.fix` or `geometry.repair.enabled` is set, geoqa
+materializes the layer and runs the repair pipeline — SQL-only is skipped.
 
 ## Tiled topology overlaps
 
@@ -66,6 +73,8 @@ force a full run.
 
 **PostGIS sources are never fingerprint-cached.** Connection URLs have no
 reliable mtime/size, so a PASS would never invalidate after table updates.
+Leave `cache.enabled: false` (default) for DB workflows, or expect every
+PostGIS layer to re-run on each invocation even when cache is on for files.
 
 ## Progress
 

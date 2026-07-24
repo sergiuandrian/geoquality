@@ -36,10 +36,12 @@ layers:
     topology:
       ruleset: cadastre_coverage
       severity: error
-      no_gaps: true          # keep dissolve-hole heuristic alongside coverage
+      # Prefer no_coverage_gaps (from ruleset) + an explicit AOI. The dissolve-hole
+      # heuristic (no_gaps) is optional and weaker — enable only if you need it.
+      # no_gaps: true
       boundary_tolerance: 0.5
       min_area: 0.5   # m² — ignore sliver noise after metric reprojection
-      # Set an AOI for coverage gaps (total_bounds alone false-positives on sparse data):
+      # Required for reliable coverage gaps (total_bounds alone is inconclusive):
       # aoi: "data/aoi.gpkg"
       # aoi_bbox: [minx, miny, maxx, maxy]
 
