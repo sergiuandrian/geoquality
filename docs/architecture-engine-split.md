@@ -1,7 +1,7 @@
-# Wave 3 design: engine phase split (not implemented yet)
+# Wave 3 design: engine phase split
 
-**Status:** design only — implement after Wave 1 (P0 safety) and Wave 2 (P1 honesty).  
-**Goal:** make `run_suite` / `_run_layer` readable and extension-safe without changing user-facing YAML semantics.
+**Status:** implemented on `feature/prerelease-wave3-engine-split` (see package
+`src/geoqa/engine/`). This document remains the design rationale.
 
 ---
 

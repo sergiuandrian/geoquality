@@ -12,8 +12,8 @@ from typing import Any
 
 from geoqa.checks.base import result, status_for
 from geoqa.config import GeometryCheck, SourceSpec
-from geoqa.datasource import _quote_table, _redact
 from geoqa.result import CheckResult, Issue, Severity, Status
+from geoqa.sql_ident import quote_table, redact
 
 logger = logging.getLogger("geoqa.sql")
 
@@ -41,21 +41,21 @@ def sql_geometry_checks(
     except Exception as exc:  # noqa: BLE001
         return [
             result(
-                CHECK, layer, _redact(spec.connection), Status.ERROR,
+                CHECK, layer, redact(spec.connection), Status.ERROR,
                 f"SQL pushdown requires SQLAlchemy: {exc}", severity=cfg.severity,
             )
         ], 0
 
     try:
-        quoted = _quote_table(spec.table)
+        quoted = quote_table(spec.table)
     except ValueError as exc:
         return [
-            result(CHECK, layer, _redact(spec.connection), Status.ERROR, str(exc),
+            result(CHECK, layer, redact(spec.connection), Status.ERROR, str(exc),
                    severity=cfg.severity)
         ], 0
 
     geom = _safe_ident(spec.geom_column)
-    source = _redact(spec.connection)
+    source = redact(spec.connection)
     engine = create_engine(str(spec.connection))
     results: list[CheckResult] = []
     n_total = 0
@@ -129,6 +129,9 @@ def only_sql_safe_checks(cfg) -> bool:
 
     Returns False when repair / legacy ``fix`` is enabled so the engine
     materializes the GeoDataFrame and can run the repair pipeline.
+
+    Plugin checks with ``sql_pushdown == "none"`` that are enabled also force
+    materialization (they cannot run on the SQL-only path).
     """
     geom = getattr(cfg, "geometry", None)
     if geom is not None:
@@ -162,6 +165,23 @@ def only_sql_safe_checks(cfg) -> bool:
         return False
     if getattr(getattr(cfg, "metadata", None), "enabled", False):
         return False
+
+    # Plugins / unknown checks: enabled + no SQL pushdown ⇒ need a GeoDataFrame.
+    from geoqa.config import check_config_for
+    from geoqa.registry import get_registry
+
+    known = {
+        "crs", "geometry", "duplicates", "attributes", "topology", "schema", "metadata",
+    }
+    for spec in get_registry().specs():
+        if spec.name in known:
+            continue
+        sub = check_config_for(cfg, spec.name)
+        if sub is None or not getattr(sub, "enabled", False):
+            continue
+        if spec.sql_pushdown == "none":
+            return False
+
     return bool(getattr(cfg.geometry, "enabled", False))
 
 

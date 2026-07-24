@@ -15,6 +15,7 @@ from typing import Any
 import geopandas as gpd
 
 from geoqa.config import SourceSpec, Suite
+from geoqa.sql_ident import quote_table, redact
 
 # Extensions we will pick up automatically when a directory is given without a
 # pattern. (pyogrio/GDAL can read more, but these are the common interchange
@@ -33,7 +34,8 @@ DEFAULT_EXTENSIONS = (
 
 MULTILAYER_EXTENSIONS = {".gpkg", ".gml", ".kml"}
 
-# Checks that can run on independent row batches without global context.
+# Deprecated aliases — prefer CheckSpec.chunk_safe / requires_full_layer.
+# Kept for any external importers; derived from the registry when available.
 CHUNK_SAFE_CHECKS = frozenset({"crs", "geometry", "attributes", "schema", "metadata"})
 CHUNK_GLOBAL_CHECKS = frozenset({"duplicates", "topology"})
 
@@ -165,7 +167,7 @@ def _postgis_stub(spec: SourceSpec) -> Layer:
     name = spec.name or spec.table or "query"
     return Layer(
         name=name,
-        source=_redact(spec.connection or ""),
+        source=redact(spec.connection or ""),
         prefer_sql=True,
         connection=spec.connection,
         table=spec.table,
@@ -176,24 +178,14 @@ def _postgis_stub(spec: SourceSpec) -> Layer:
 
 
 def _quote_table(table: str) -> str:
-    """Quote a schema-qualified table name for PostgreSQL (``"schema"."table"``).
-
-    Rejects empty parts and characters that would break out of a quoted
-    identifier. Mixed-case and reserved-word names are preserved by quoting.
-    """
-    parts = [p.strip().strip('"') for p in table.split(".")]
-    if not parts or len(parts) > 2 or any(not p for p in parts):
-        raise ValueError(f"invalid table identifier: {table!r}")
-    for part in parts:
-        if any(c in part for c in ';--"\'\\') or "\x00" in part:
-            raise ValueError(f"invalid table identifier: {table!r}")
-    return ".".join(f'"{p}"' for p in parts)
+    """Backward-compatible alias for :func:`geoqa.sql_ident.quote_table`."""
+    return quote_table(table)
 
 
 def _load_postgis(spec: SourceSpec) -> Layer:
     """Read a single layer from a PostGIS/SQLAlchemy connection."""
     name = spec.name or spec.table or "query"
-    redacted = _redact(spec.connection or "")
+    redacted = redact(spec.connection or "")
     try:
         from sqlalchemy import create_engine
     except Exception:  # noqa: BLE001 - optional dependency
@@ -212,7 +204,7 @@ def _load_postgis(spec: SourceSpec) -> Layer:
         sql = spec.query
     else:
         try:
-            sql = f"SELECT * FROM {_quote_table(str(spec.table))}"
+            sql = f"SELECT * FROM {quote_table(str(spec.table))}"
         except ValueError as exc:
             return Layer(name=name, source=redacted, error=str(exc), source_spec=spec)
 
@@ -238,13 +230,8 @@ def _load_postgis(spec: SourceSpec) -> Layer:
 
 
 def _redact(url: str) -> str:
-    """Hide credentials in a connection URL before it lands in a report."""
-    if "@" in url and "://" in url:
-        scheme, rest = url.split("://", 1)
-        creds, host = rest.split("@", 1)
-        user = creds.split(":", 1)[0]
-        return f"{scheme}://{user}:***@{host}"
-    return url
+    """Backward-compatible alias for :func:`geoqa.sql_ident.redact`."""
+    return redact(url)
 
 
 def _expand_files(base: Path, pattern: str | None) -> list[Path]:

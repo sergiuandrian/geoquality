@@ -94,6 +94,75 @@ defaults:
     assert "chunk_size" in by["attributes.unique"].message
 
 
+def test_plugin_requires_full_layer_skipped_under_chunk(tmp_path: Path, monkeypatch):
+    """CheckSpec.requires_full_layer=True → SKIP under chunk_size."""
+    from pydantic import BaseModel
+
+    from geoqa.registry import CheckSpec, reset_registry
+    from geoqa.result import CheckResult, Severity
+
+    class FullCfg(BaseModel):
+        enabled: bool = True
+
+    def run_full(gdf, layer, source, cfg):
+        return [
+            CheckResult(
+                check="full_only", layer=layer, source=source,
+                status=Status.PASS, severity=Severity.INFO, message="should not run",
+            )
+        ]
+
+    spec = CheckSpec(
+        "full_only", run_full, FullCfg, order=90,
+        chunk_safe=False, requires_full_layer=True,
+    )
+
+    import geoqa.registry as regmod
+
+    real_build = regmod.build_registry
+
+    def fake_build(*, include_plugins=True):
+        reg = real_build(include_plugins=False)
+        reg.register(spec)
+        return reg
+
+    reset_registry()
+    monkeypatch.setattr(regmod, "build_registry", fake_build)
+    from geoqa import config as config_pkg
+
+    config_pkg._layer_model_cache = None
+    regmod._default_registry = fake_build()
+
+    gpkg = tmp_path / "pts.gpkg"
+    _write_points(gpkg, 10)
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        f"""
+version: 1
+sources:
+  - path: "{gpkg.as_posix()}"
+    chunk_size: 3
+defaults:
+  crs: {{ enabled: false }}
+  duplicates: {{ enabled: false }}
+  attributes: {{ enabled: false }}
+  topology: {{ enabled: false }}
+  geometry: {{ valid: true }}
+  full_only:
+    enabled: true
+""",
+        encoding="utf-8",
+    )
+    try:
+        report = run_suite(load_suite(cfg))
+        by = {r.check: r for r in report.layers[0].results}
+        assert by["full_only"].status == Status.SKIP
+        assert "chunk_size" in by["full_only"].message
+    finally:
+        reset_registry()
+        config_pkg._layer_model_cache = None
+
+
 def test_fingerprint_cache_skips_second_run(tmp_path: Path):
     gpkg = tmp_path / "clean.gpkg"
     gpd.GeoDataFrame(
@@ -264,7 +333,7 @@ def test_postgis_layers_are_not_fingerprint_cached(monkeypatch, tmp_path: Path):
             )
         ], 3
 
-    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+    monkeypatch.setattr("geoqa.engine.load_strategy.sql_geometry_checks", fake_sql)
 
     cfg = tmp_path / "geoqa.yml"
     cfg.write_text(
@@ -300,7 +369,7 @@ defaults:
             name="places",
         ),
     )
-    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    monkeypatch.setattr("geoqa.engine.suite.iter_layers", lambda suite, defer_load=False: [stub])
     first = run_suite(load_suite(cfg), use_cache=True)
     second = run_suite(load_suite(cfg), use_cache=True)
     assert first.layers[0].results[0].check != "cache"
@@ -320,8 +389,8 @@ def test_engine_sql_only_skips_materialize(monkeypatch, tmp_path: Path):
             )
         ], 42
 
-    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
-    monkeypatch.setattr("geoqa.engine.only_sql_safe_checks", lambda cfg: True)
+    monkeypatch.setattr("geoqa.engine.load_strategy.sql_geometry_checks", fake_sql)
+    monkeypatch.setattr("geoqa.engine.layer.only_sql_safe_checks", lambda cfg: True)
 
     cfg = tmp_path / "geoqa.yml"
     cfg.write_text(
@@ -358,7 +427,7 @@ defaults:
             name="parcels",
         ),
     )
-    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    monkeypatch.setattr("geoqa.engine.suite.iter_layers", lambda suite, defer_load=False: [stub])
     report = run_suite(load_suite(cfg))
     assert report.layers[0].n_features == 42
     assert report.layers[0].results[0].message == "ok via sql"
@@ -400,8 +469,8 @@ def test_prefer_sql_materializes_when_other_checks_need_gdf(monkeypatch, tmp_pat
             )
         ], 5
 
-    monkeypatch.setattr("geoqa.engine._load_postgis", fake_load)
-    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+    monkeypatch.setattr("geoqa.engine.load_strategy._load_postgis", fake_load)
+    monkeypatch.setattr("geoqa.engine.load_strategy.sql_geometry_checks", fake_sql)
 
     cfg = tmp_path / "geoqa.yml"
     cfg.write_text(
@@ -431,7 +500,7 @@ defaults:
             name="parcels",
         ),
     )
-    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    monkeypatch.setattr("geoqa.engine.suite.iter_layers", lambda suite, defer_load=False: [stub])
     report = run_suite(load_suite(cfg))
     assert loaded["n"] == 1
     assert stub.gdf is not None
@@ -480,8 +549,8 @@ def test_prefer_sql_with_repair_materializes(monkeypatch, tmp_path: Path):
             )
         ], 5
 
-    monkeypatch.setattr("geoqa.engine._load_postgis", fake_load)
-    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+    monkeypatch.setattr("geoqa.engine.load_strategy._load_postgis", fake_load)
+    monkeypatch.setattr("geoqa.engine.load_strategy.sql_geometry_checks", fake_sql)
 
     cfg = tmp_path / "geoqa.yml"
     cfg.write_text(
@@ -519,7 +588,7 @@ defaults:
             name="parcels",
         ),
     )
-    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    monkeypatch.setattr("geoqa.engine.suite.iter_layers", lambda suite, defer_load=False: [stub])
     report = run_suite(load_suite(cfg))
     assert loaded["n"] == 1
     assert any(r.check == "geometry.repair" for r in report.layers[0].results)

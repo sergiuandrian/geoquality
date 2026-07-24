@@ -25,7 +25,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import metadata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -37,6 +37,7 @@ logger = logging.getLogger("geoqa")
 ENTRY_POINT_GROUP = "geoqa.checks"
 
 CheckRunner = Callable[..., "list[CheckResult]"]
+SqlPushdown = Literal["none", "geometry"]
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,10 @@ class CheckSpec:
     order: int = 100  # lower runs first
     description: str = ""
     config_keys: tuple[str, ...] = field(default=())
+    # Scale / load strategy (Wave 3): how the engine may run this check.
+    chunk_safe: bool = True
+    requires_full_layer: bool = False
+    sql_pushdown: SqlPushdown = "none"
 
     def keys(self) -> tuple[str, ...]:
         """Config keys to advertise (falls back to the model's fields)."""
@@ -94,20 +99,41 @@ def _builtin_specs() -> list[CheckSpec]:
     )
 
     return [
-        CheckSpec("crs", crs.run, CrsCheck, order=10,
-                  description="Coordinate reference system is defined and allowed"),
-        CheckSpec("schema", schema.run, SchemaCheck, order=15,
-                  description="Schema conformance (columns, geometry types, precision)"),
-        CheckSpec("geometry", geometry.run, GeometryCheck, order=20,
-                  description="Geometries are valid, non-empty and present"),
-        CheckSpec("duplicates", duplicates.run, DuplicatesCheck, order=30,
-                  description="No exact (or fuzzy) duplicate geometries"),
-        CheckSpec("attributes", attributes.run, AttributesCheck, order=40,
-                  description="Attribute completeness, uniqueness and domains"),
-        CheckSpec("topology", topology.run, TopologyCheck, order=50,
-                  description="No overlaps, gaps or dangling line endpoints"),
-        CheckSpec("metadata", metadata.run, MetadataCheck, order=60,
-                  description="Sidecar metadata presence and required keys"),
+        CheckSpec(
+            "crs", crs.run, CrsCheck, order=10,
+            description="Coordinate reference system is defined and allowed",
+            chunk_safe=True, requires_full_layer=False, sql_pushdown="none",
+        ),
+        CheckSpec(
+            "schema", schema.run, SchemaCheck, order=15,
+            description="Schema conformance (columns, geometry types, precision)",
+            chunk_safe=True, requires_full_layer=False, sql_pushdown="none",
+        ),
+        CheckSpec(
+            "geometry", geometry.run, GeometryCheck, order=20,
+            description="Geometries are valid, non-empty and present",
+            chunk_safe=True, requires_full_layer=False, sql_pushdown="geometry",
+        ),
+        CheckSpec(
+            "duplicates", duplicates.run, DuplicatesCheck, order=30,
+            description="No exact (or fuzzy) duplicate geometries",
+            chunk_safe=False, requires_full_layer=True, sql_pushdown="none",
+        ),
+        CheckSpec(
+            "attributes", attributes.run, AttributesCheck, order=40,
+            description="Attribute completeness, uniqueness and domains",
+            chunk_safe=True, requires_full_layer=False, sql_pushdown="none",
+        ),
+        CheckSpec(
+            "topology", topology.run, TopologyCheck, order=50,
+            description="No overlaps, gaps or dangling line endpoints",
+            chunk_safe=False, requires_full_layer=True, sql_pushdown="none",
+        ),
+        CheckSpec(
+            "metadata", metadata.run, MetadataCheck, order=60,
+            description="Sidecar metadata presence and required keys",
+            chunk_safe=True, requires_full_layer=False, sql_pushdown="none",
+        ),
     ]
 
 
