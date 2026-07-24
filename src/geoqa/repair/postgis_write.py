@@ -8,7 +8,7 @@ from typing import Any
 import geopandas as gpd
 
 from geoqa.config import PostgisWriteConfig
-from geoqa.datasource import _quote_table, _redact
+from geoqa.sql_ident import quote_table, redact
 
 logger = logging.getLogger("geoqa")
 
@@ -31,7 +31,7 @@ def write_postgis(
     result: dict[str, Any] = {
         "dry_run": cfg.dry_run or not allow_write,
         "table": cfg.table,
-        "connection": _redact(cfg.connection or ""),
+        "connection": redact(cfg.connection or ""),
         "n_rows": len(gdf),
         "updated": 0,
         "missed": 0,
@@ -49,7 +49,7 @@ def write_postgis(
     if result["dry_run"]:
         result["ok"] = True
         result["message"] = (
-            f"dry_run: would UPDATE {len(gdf)} row(s) in {_quote_table(cfg.table)} "
+            f"dry_run: would UPDATE {len(gdf)} row(s) in {quote_table(cfg.table)} "
             f"via {cfg.id_column!r} / {cfg.geom_column!r}"
         )
         logger.info("%s", result["message"])
@@ -72,7 +72,7 @@ def write_postgis(
     engine = None
     try:
         engine = create_engine(str(cfg.connection))
-        table_sql = _quote_table(cfg.table)
+        table_sql = quote_table(cfg.table)
         id_col = cfg.id_column
         geom_col = cfg.geom_column
         updated = 0

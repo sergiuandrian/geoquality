@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Split the orchestrator into `geoqa.engine` package phases (suite / layer /
+  load_strategy / dispatch / repair / cache / failures) and move SQL identity
+  helpers to `geoqa.sql_ident`.
+- `CheckSpec` gains `chunk_safe`, `requires_full_layer`, and `sql_pushdown` so
+  chunk/SQL strategy is registry-driven (including plugins).
+
 ### Fixed
 - Fingerprint cache now includes layer name / sublayer / table / query so
   multi-layer GeoPackages cannot share a cache entry.

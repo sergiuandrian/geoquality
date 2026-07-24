@@ -28,11 +28,25 @@ def run(gdf, layer, source, cfg) -> list[CheckResult]:
     ]
 
 
-SPEC = CheckSpec("my_check", run, MyConfig, order=60, description="My rule")
+SPEC = CheckSpec(
+    "my_check",
+    run,
+    MyConfig,
+    order=60,
+    description="My rule",
+    # Optional scale hints for the engine (defaults shown):
+    # chunk_safe=True,
+    # requires_full_layer=False,  # True → SKIP under chunk_size
+    # sql_pushdown="none",        # "geometry" for SQL-only eligibility
+)
 ```
 
 A check is a callable `run(gdf, layer, source, cfg) -> list[CheckResult]` paired
 with a pydantic config model. The model's name (`spec.name`) becomes the YAML key.
+
+Set ``requires_full_layer=True`` when the check needs the whole layer (like
+topology/duplicates). Set ``sql_pushdown="geometry"`` only if the check can
+participate in PostGIS SQL-only geometry validation.
 
 ## 2. Advertise it
 
