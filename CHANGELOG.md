@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-24
+
 ### Changed
 - Starters / profiles prefer `no_coverage_gaps` (+ AOI comments) over heuristic
   `no_gaps`; CLI `geoqa init` leads with `geometry.repair` instead of `fix`.
@@ -33,6 +35,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Overlap scans capped by `max_pairs` with zero hits return WARN (not PASS).
 - `geoqa schema` JSON Schema includes the `cache` block.
 - Docs: repair runs after checks (detect-then-repair), not mid-pass.
+
+### Meta
+- Package version: **0.7.0** (still Development Status **Beta**; GitHub releases
+  are the primary distribution channel).
+- Pre-commit / CI docs pin examples to `v0.7.0`.
 
 ## [0.6.0] - 2026-07-22
 
@@ -130,7 +137,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and topology over folders of geospatial files, with console/JSON/HTML reports
   and a pre-commit hook.
 
-[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.7.0
 [0.6.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.6.0
 [0.5.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.4.0
