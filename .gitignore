@@ -29,6 +29,7 @@ geoqa-report.json
 fixed/
 examples/data/
 realtest/
+.geoqa-fulltest/
 
 # OS
 .DS_Store

@@ -64,7 +64,10 @@ EPSG:6933 for near-global data).
 - **`file`** — GeoPackage under `--fix-output` (required, else a warning).
 - **`postgis`** — `UPDATE` by `id_column`. **`dry_run: true` by default.**
   Live writes need both `dry_run: false` **and** CLI
-  `--i-know-what-im-doing`.
+  `--i-know-what-im-doing`. Live writes require a resolvable EPSG CRS
+  (SRID 0 is refused) and verify each UPDATE via `rowcount`.
+  **`dissolve_duplicates` cannot be combined with `write_mode: postgis`**
+  (UPDATE cannot delete orphan rows); use `file` or `none` instead.
 
 ### Audit trail
 
@@ -75,6 +78,7 @@ EPSG:6933 for near-global data).
 
 - `make_valid` can change geometry type (e.g. Polygon → MultiPolygon /
   GeometryCollection).
-- PostGIS write-back updates geometry only (no attribute merge).
+- PostGIS write-back updates geometry only (no attribute merge, no row
+  deletes). Wrong `id_column` values are reported as write failures.
 - Snap / sliver ops reproject to a metric CRS and back; expect tiny
   coordinate drift.

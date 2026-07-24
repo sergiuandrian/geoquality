@@ -55,9 +55,13 @@ cache:
   dir: .geoqa/cache
 ```
 
-Cache key = hash(file mtime + size + layer config fragment + geoqa version).
-When a prior run for that fingerprint was all `pass`/`skip`, the layer is
-skipped. Use `geoqa run --no-cache` to force a full run.
+Cache key = hash(file mtime + size + **layer name** + sublayer/table/query +
+layer config fragment + geoqa version). When a prior run for that fingerprint
+was all `pass`/`skip`, the layer is skipped. Use `geoqa run --no-cache` to
+force a full run.
+
+**PostGIS sources are never fingerprint-cached.** Connection URLs have no
+reliable mtime/size, so a PASS would never invalidate after table updates.
 
 ## Progress
 

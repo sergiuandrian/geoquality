@@ -68,6 +68,17 @@ class RepairConfig(_Base):
             raise ValueError(f"write_mode must be one of {sorted(allowed)}, got {v!r}")
         return v
 
+    @model_validator(mode="after")
+    def _no_dissolve_with_postgis(self) -> RepairConfig:
+        """PostGIS write-back only UPDATEs geometries; it cannot DELETE dissolved rows."""
+        if self.dissolve_duplicates and self.write_mode == "postgis":
+            raise ValueError(
+                "dissolve_duplicates cannot be used with write_mode=postgis "
+                "(UPDATE cannot remove orphan duplicate rows); "
+                "use write_mode=file or none"
+            )
+        return self
+
 
 class GeometryCheck(_Base):
     enabled: bool = True

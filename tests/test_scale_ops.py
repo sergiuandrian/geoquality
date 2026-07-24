@@ -186,6 +186,97 @@ def test_only_sql_safe_checks_helper():
         topology=TopologyCheck(enabled=True, no_overlaps=True),
     )
     assert only_sql_safe_checks(unsafe) is False
+    with_repair = LayerConfig(
+        crs=CrsCheck(enabled=False),
+        duplicates=DuplicatesCheck(enabled=False),
+        attributes=AttributesCheck(enabled=False),
+        topology=TopologyCheck(enabled=False),
+        geometry=GeometryCheck(
+            enabled=True,
+            repair={"enabled": True, "make_valid": True, "write_mode": "none"},
+        ),
+    )
+    assert only_sql_safe_checks(with_repair) is False
+    with_fix = LayerConfig(
+        crs=CrsCheck(enabled=False),
+        duplicates=DuplicatesCheck(enabled=False),
+        attributes=AttributesCheck(enabled=False),
+        topology=TopologyCheck(enabled=False),
+        geometry=GeometryCheck(enabled=True, fix=True),
+    )
+    assert only_sql_safe_checks(with_fix) is False
+
+
+def test_fingerprint_includes_layer_identity():
+    base = dict(source="/data.gpkg", file_stat=(1.0, 10), config_fragment={})
+    a = fingerprint(**base, layer_name="parcels", sublayer="parcels")
+    b = fingerprint(**base, layer_name="roads", sublayer="roads")
+    assert a != b
+    t1 = fingerprint(**base, layer_name="x", table="public.a")
+    t2 = fingerprint(**base, layer_name="x", table="public.b")
+    assert t1 != t2
+
+
+def test_postgis_layers_are_not_fingerprint_cached(monkeypatch, tmp_path: Path):
+    """Connection sources must never skip via fingerprint cache."""
+    from geoqa.config import SourceSpec
+    from geoqa.datasource import Layer
+    from geoqa.result import CheckResult, Severity
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    def fake_sql(spec, layer, cfg, max_issues=50):
+        return [
+            CheckResult(
+                check="geometry.valid", layer=layer, source="s",
+                status=Status.PASS, severity=Severity.ERROR,
+                message="ok", n_total=3,
+            )
+        ], 3
+
+    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        f"""
+version: 1
+sources:
+  - connection: "postgresql://u:p@localhost/db"
+    table: public.places
+    prefer_sql: true
+    name: places
+cache:
+  enabled: true
+  dir: "{cache_dir.as_posix()}"
+defaults:
+  crs: {{ enabled: false }}
+  duplicates: {{ enabled: false }}
+  attributes: {{ enabled: false }}
+  topology: {{ enabled: false }}
+  geometry: {{ valid: true }}
+""",
+        encoding="utf-8",
+    )
+    stub = Layer(
+        name="places",
+        source="postgresql://u:***@localhost/db",
+        prefer_sql=True,
+        connection="postgresql://u:p@localhost/db",
+        table="public.places",
+        source_spec=SourceSpec(
+            connection="postgresql://u:p@localhost/db",
+            table="public.places",
+            prefer_sql=True,
+            name="places",
+        ),
+    )
+    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    first = run_suite(load_suite(cfg), use_cache=True)
+    second = run_suite(load_suite(cfg), use_cache=True)
+    assert first.layers[0].results[0].check != "cache"
+    assert second.layers[0].results[0].check != "cache"
+    assert list(cache_dir.glob("*.json")) == []
 
 
 def test_engine_sql_only_skips_materialize(monkeypatch, tmp_path: Path):
@@ -245,12 +336,164 @@ defaults:
     assert stub.gdf is None
 
 
+def test_prefer_sql_materializes_when_other_checks_need_gdf(monkeypatch, tmp_path: Path):
+    """prefer_sql defers load; if CRS/etc. are on, engine must materialize PostGIS."""
+    from conftest import make_parcels
+
+    from geoqa.config import SourceSpec, load_suite
+    from geoqa.datasource import Layer
+    from geoqa.engine import run_suite
+    from geoqa.result import CheckResult, Severity, Status
+
+    loaded = {"n": 0}
+
+    def fake_load(spec):
+        loaded["n"] += 1
+        return Layer(
+            name=spec.name or "parcels",
+            source="postgresql://u:***@localhost/db",
+            gdf=make_parcels(),
+            prefer_sql=True,
+            connection=spec.connection,
+            table=spec.table,
+            source_spec=spec,
+        )
+
+    def fake_sql(spec, layer, cfg, *, max_issues=50):
+        return [
+            CheckResult(
+                check="geometry.valid",
+                layer=layer,
+                source="postgresql://u:***@localhost/db",
+                status=Status.PASS,
+                severity=Severity.ERROR,
+                message="ok via sql after materialize",
+            )
+        ], 5
+
+    monkeypatch.setattr("geoqa.engine._load_postgis", fake_load)
+    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        """
+version: 1
+sources:
+  - connection: "postgresql://u:p@localhost/db"
+    table: public.parcels
+    prefer_sql: true
+    name: parcels
+defaults:
+  crs: { required: true, allowed_epsg: [3857] }
+  geometry: { valid: true }
+""",
+        encoding="utf-8",
+    )
+    stub = Layer(
+        name="parcels",
+        source="postgresql://u:***@localhost/db",
+        prefer_sql=True,
+        connection="postgresql://u:p@localhost/db",
+        table="public.parcels",
+        source_spec=SourceSpec(
+            connection="postgresql://u:p@localhost/db",
+            table="public.parcels",
+            prefer_sql=True,
+            name="parcels",
+        ),
+    )
+    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    report = run_suite(load_suite(cfg))
+    assert loaded["n"] == 1
+    assert stub.gdf is not None
+    assert report.layers[0].n_features == len(stub.gdf)
+    assert not any(r.check == "load" and r.status.value == "error" for r in report.layers[0].results)
+
+
 def test_corrupt_cache_entry_ignored(tmp_path: Path):
     key = fingerprint(source="z", file_stat=(1.0, 1), config_fragment={})
     bad = tmp_path / f"{key}.json"
     bad.write_text("{not-json", encoding="utf-8")
     assert read_entry(tmp_path, key) is None
 
+
+def test_prefer_sql_with_repair_materializes(monkeypatch, tmp_path: Path):
+    """Repair enabled must not take the SQL-only early return."""
+    from conftest import make_parcels
+
+    from geoqa.config import SourceSpec
+    from geoqa.datasource import Layer
+    from geoqa.result import CheckResult, Severity, Status
+
+    loaded = {"n": 0}
+
+    def fake_load(spec):
+        loaded["n"] += 1
+        return Layer(
+            name="parcels",
+            source="postgresql://u:***@localhost/db",
+            gdf=make_parcels(),
+            prefer_sql=True,
+            connection=spec.connection,
+            table=spec.table,
+            source_spec=spec,
+        )
+
+    def fake_sql(spec, layer, cfg, *, max_issues=50):
+        return [
+            CheckResult(
+                check="geometry.valid",
+                layer=layer,
+                source="s",
+                status=Status.PASS,
+                severity=Severity.ERROR,
+                message="sql",
+            )
+        ], 5
+
+    monkeypatch.setattr("geoqa.engine._load_postgis", fake_load)
+    monkeypatch.setattr("geoqa.engine.sql_geometry_checks", fake_sql)
+
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        """
+version: 1
+sources:
+  - connection: "postgresql://u:p@localhost/db"
+    table: public.parcels
+    prefer_sql: true
+    name: parcels
+defaults:
+  crs: { enabled: false }
+  duplicates: { enabled: false }
+  attributes: { enabled: false }
+  topology: { enabled: false }
+  geometry:
+    valid: true
+    repair:
+      enabled: true
+      make_valid: true
+      write_mode: none
+""",
+        encoding="utf-8",
+    )
+    stub = Layer(
+        name="parcels",
+        source="postgresql://u:***@localhost/db",
+        prefer_sql=True,
+        connection="postgresql://u:p@localhost/db",
+        table="public.parcels",
+        source_spec=SourceSpec(
+            connection="postgresql://u:p@localhost/db",
+            table="public.parcels",
+            prefer_sql=True,
+            name="parcels",
+        ),
+    )
+    monkeypatch.setattr("geoqa.engine.iter_layers", lambda suite, defer_load=False: [stub])
+    report = run_suite(load_suite(cfg))
+    assert loaded["n"] == 1
+    assert any(r.check == "geometry.repair" for r in report.layers[0].results)
 
 
 def test_sql_pushdown_mocked(monkeypatch):

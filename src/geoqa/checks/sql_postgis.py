@@ -125,7 +125,18 @@ def sql_geometry_checks(
 
 
 def only_sql_safe_checks(cfg) -> bool:
-    """True when the layer config only needs SQL-pushdown geometry checks."""
+    """True when the layer config only needs SQL-pushdown geometry checks.
+
+    Returns False when repair / legacy ``fix`` is enabled so the engine
+    materializes the GeoDataFrame and can run the repair pipeline.
+    """
+    geom = getattr(cfg, "geometry", None)
+    if geom is not None:
+        if getattr(geom, "fix", False):
+            return False
+        repair = getattr(geom, "repair", None)
+        if repair is not None and getattr(repair, "enabled", False):
+            return False
     if getattr(cfg.crs, "enabled", False):
         return False
     dup = cfg.duplicates

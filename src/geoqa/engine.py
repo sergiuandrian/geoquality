@@ -18,6 +18,7 @@ from geoqa.datasource import (
     CHUNK_GLOBAL_CHECKS,
     CHUNK_SAFE_CHECKS,
     Layer,
+    _load_postgis,
     iter_file_chunks,
     iter_layers,
 )
@@ -154,25 +155,27 @@ def _run_layer(
         return lr
 
     # Fingerprint cache: skip work when source + config unchanged and prior PASS.
+    # PostGIS layers never use the fingerprint cache (no reliable content mtime).
     cache_key = None
     if cache_dir is not None:
         cache_key = _cache_key_for(layer, cfg)
-        entry = geoqa_cache.read_entry(cache_dir, cache_key)
-        if entry is not None and geoqa_cache.layer_passed(entry):
-            emit(progress, ProgressEvent(
-                layer=layer.name, phase="cache", message="cache hit (skip)",
-            ))
-            lr.n_features = int(entry.get("n_features") or 0)
-            lr.crs = entry.get("crs")
-            lr.geometry_type = entry.get("geometry_type")
-            lr.results.append(
-                CheckResult(
-                    check="cache", layer=layer.name, source=layer.source,
-                    status=Status.SKIP, severity=Severity.INFO,
-                    message="Skipped: fingerprint cache hit (prior PASS).",
+        if cache_key is not None:
+            entry = geoqa_cache.read_entry(cache_dir, cache_key)
+            if entry is not None and geoqa_cache.layer_passed(entry):
+                emit(progress, ProgressEvent(
+                    layer=layer.name, phase="cache", message="cache hit (skip)",
+                ))
+                lr.n_features = int(entry.get("n_features") or 0)
+                lr.crs = entry.get("crs")
+                lr.geometry_type = entry.get("geometry_type")
+                lr.results.append(
+                    CheckResult(
+                        check="cache", layer=layer.name, source=layer.source,
+                        status=Status.SKIP, severity=Severity.INFO,
+                        message="Skipped: fingerprint cache hit (prior PASS).",
+                    )
                 )
-            )
-            return lr
+                return lr
 
     # SQL-only path: geometry checks without materializing the GeoDataFrame.
     if (
@@ -182,6 +185,7 @@ def _run_layer(
         and layer.source_spec is not None
         and only_sql_safe_checks(cfg)
         and layer.gdf is None
+        and not layer.error
     ):
         emit(progress, ProgressEvent(
             layer=layer.name, phase="check", check="geometry", message="SQL pushdown",
@@ -191,6 +195,21 @@ def _run_layer(
         lr.results.extend(sql_results)
         _maybe_write_cache(cache_dir, cache_key, lr)
         return lr
+
+    # Deferred PostGIS stubs (prefer_sql) still need a GeoDataFrame when other
+    # checks are enabled — materialize now instead of failing with "unknown error".
+    if (
+        layer.gdf is None
+        and not layer.error
+        and layer.connection
+        and layer.source_spec is not None
+    ):
+        emit(progress, ProgressEvent(
+            layer=layer.name, phase="load", message="materialize PostGIS layer",
+        ))
+        loaded = _load_postgis(layer.source_spec)
+        layer.gdf = loaded.gdf
+        layer.error = loaded.error
 
     # Chunked path for large files.
     if layer.chunk_size and layer.gdf is None and not layer.error:
@@ -280,9 +299,7 @@ def _run_layer(
             pg = write_postgis(
                 gdf, repair_cfg.postgis, allow_write=allow_postgis_write,
             )
-            status = (
-                Status.ERROR if "failed" in pg["message"].lower() else Status.PASS
-            )
+            status = Status.PASS if pg.get("ok", False) else Status.ERROR
             lr.results.append(
                 CheckResult(
                     check="geometry.repair.postgis", layer=layer.name, source=layer.source,
@@ -439,12 +456,23 @@ def _merge_chunk_results(merged: dict[str, list[CheckResult]]) -> list[CheckResu
     return out
 
 
-def _cache_key_for(layer: Layer, cfg) -> str:
+def _cache_key_for(layer: Layer, cfg) -> str | None:
+    """Build a cache key, or ``None`` when this layer must not be cached.
+
+    PostGIS / SQLAlchemy sources are excluded: ``file_stat`` is always ``None``
+    for connection URLs, so a PASS would never invalidate after data changes.
+    """
+    if layer.connection:
+        return None
     fragment = cfg.model_dump(mode="json") if hasattr(cfg, "model_dump") else {}
     return geoqa_cache.fingerprint(
         source=layer.source,
         file_stat=geoqa_cache.file_stat(layer.source),
         config_fragment=fragment,
+        layer_name=layer.name,
+        sublayer=layer.sublayer,
+        table=layer.table,
+        query=layer.query,
     )
 
 
