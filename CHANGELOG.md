@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Starters / profiles prefer `no_coverage_gaps` (+ AOI comments) over heuristic
+  `no_gaps`; CLI `geoqa init` leads with `geometry.repair` instead of `fix`.
+- `no_coverage_gaps` without an explicit AOI returns **WARN** even when zero
+  gaps are found (total_bounds is inconclusive).
 - Split the orchestrator into `geoqa.engine` package phases (suite / layer /
   load_strategy / dispatch / repair / cache / failures) and move SQL identity
   helpers to `geoqa.sql_ident`.

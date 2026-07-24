@@ -11,7 +11,10 @@ defaults:
     allowed_epsg: [4326, 3857, 32633]
   geometry:
     valid: true
-    fix: false
+    repair:
+      enabled: false
+      make_valid: true
+      write_mode: file
   duplicates:
     exact: true
     severity: warn
@@ -33,7 +36,9 @@ layers:
       enabled: true
       severity: warn
       no_overlaps: true
-      no_gaps: true
+      no_coverage_gaps: true
+      # Prefer an explicit AOI for coverage (total_bounds alone is inconclusive):
+      # aoi_bbox: [minx, miny, maxx, maxy]
 
   roads:
     attributes:

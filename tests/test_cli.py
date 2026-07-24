@@ -45,7 +45,11 @@ def test_init_writes_config(tmp_path: Path):
     result = runner.invoke(app, ["init", "-p", str(target)])
     assert result.exit_code == 0
     assert target.exists()
-    assert "version: 1" in target.read_text(encoding="utf-8")
+    text = target.read_text(encoding="utf-8")
+    assert "version: 1" in text
+    assert "repair:" in text
+    assert "no_coverage_gaps: true" in text
+    assert not any(ln.strip() == "no_gaps: true" for ln in text.splitlines())
 
     # Refuses to overwrite without --force.
     again = runner.invoke(app, ["init", "-p", str(target)])
@@ -61,6 +65,8 @@ def test_init_profile_parcels(tmp_path: Path):
     text = target.read_text(encoding="utf-8")
     assert "Parcels / cadastre" in text
     assert "cadastre_coverage" in text
+    # Demoted to a comment; ruleset covers no_coverage_gaps.
+    assert not any(ln.strip() == "no_gaps: true" for ln in text.splitlines())
     # Profile must be a valid suite config.
     from geoqa.config import load_suite
 

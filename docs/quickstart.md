@@ -18,6 +18,10 @@ The console shows a per-layer summary; `geoqa-report.html` is a standalone,
 shareable report with an interactive map of any offending features. The process
 exits non-zero when any `error`-severity check fails — perfect for CI.
 
+Starter configs prefer **`geometry.repair`** (off by default) and
+**`no_coverage_gaps`** for parcels — set an `aoi` / `aoi_bbox` for reliable
+coverage. See [Repair](repair.md) and [Checks](checks.md).
+
 ## Domain profiles
 
 Skip inventing rules from scratch:

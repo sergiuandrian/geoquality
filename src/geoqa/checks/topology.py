@@ -432,8 +432,12 @@ def _gaps(valid, types, layer, source, cfg) -> CheckResult:
     ]
     return result(
         CHECK + ".no_gaps", layer, source, status_for(n, cfg.severity),
-        "No interior holes in dissolved polygons." if n == 0
-        else f"{n} interior hole(s) in dissolved polygons (heuristic gap check).",
+        "No interior holes in dissolved polygons (heuristic; prefer no_coverage_gaps + AOI)."
+        if n == 0
+        else (
+            f"{n} interior hole(s) in dissolved polygons "
+            "(heuristic; prefer no_coverage_gaps + AOI)."
+        ),
         severity=cfg.severity, n_total=len(polys), n_failed=n, issues=issues,
     )
 
@@ -487,15 +491,26 @@ def _coverage_gaps(valid, types, layer, source, cfg, metric_crs, source_crs) -> 
         )
         for p in parts[:200]
     ]
-    caveat = ""
-    if used_fallback_bounds and n > 0:
+    if used_fallback_bounds:
+        # total_bounds is not a real AOI — never claim a confident PASS.
         caveat = (
-            " AOI was total_bounds — sparse/coastal layers often false-positive; "
-            "set topology.aoi or aoi_bbox."
+            " AOI was layer total_bounds (not an explicit aoi/aoi_bbox): "
+            "sparse/coastal layers often false-positive; set topology.aoi or aoi_bbox."
+        )
+        if n == 0:
+            return result(
+                CHECK + ".no_coverage_gaps", layer, source, Status.WARN,
+                "No coverage gaps vs total_bounds (inconclusive without AOI)." + caveat,
+                severity=Severity.WARN, n_total=len(polys), n_failed=0, issues=issues,
+            )
+        return result(
+            CHECK + ".no_coverage_gaps", layer, source, status_for(n, cfg.severity),
+            f"{n} coverage gap(s) vs total_bounds." + caveat,
+            severity=cfg.severity, n_total=len(polys), n_failed=n, issues=issues,
         )
     return result(
         CHECK + ".no_coverage_gaps", layer, source, status_for(n, cfg.severity),
-        ("No coverage gaps vs AOI." if n == 0 else f"{n} coverage gap(s) vs AOI.") + caveat,
+        "No coverage gaps vs AOI." if n == 0 else f"{n} coverage gap(s) vs AOI.",
         severity=cfg.severity, n_total=len(polys), n_failed=n, issues=issues,
     )
 

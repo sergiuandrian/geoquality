@@ -108,7 +108,11 @@ defaults:
     allowed_epsg: [4326, 3857]
   geometry:
     valid: true
-    fix: false             # set true to auto-repair with make_valid()
+    # Prefer the repair pipeline (sidecar file). Legacy: fix: true
+    repair:
+      enabled: false
+      make_valid: true
+      write_mode: file     # none | file | postgis (dry_run default)
   duplicates:
     exact: true
     fuzzy:
@@ -135,7 +139,10 @@ layers:
     topology:
       enabled: true
       no_overlaps: true
-      no_gaps: true
+      no_coverage_gaps: true
+      # Set an AOI — without it, coverage gaps vs total_bounds is WARN/inconclusive:
+      # aoi: "data/aoi.gpkg"
+      # aoi_bbox: [minx, miny, maxx, maxy]
 """
 
 

@@ -33,8 +33,9 @@ layers:
       coincident_edges: true
       boundary_tolerance: 1.0
       min_area: 1.0
-      # Prefer an explicit AOI for coastal / sparse admin units:
+      # Required for reliable coverage (without AOI, result is WARN/inconclusive):
       # aoi: "data/country_aoi.gpkg"
+      # aoi_bbox: [minx, miny, maxx, maxy]
 
 report:
   max_issues_per_check: 100

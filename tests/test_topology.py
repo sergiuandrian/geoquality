@@ -138,6 +138,19 @@ def test_coverage_gaps_complete_aoi_passes():
     assert res["topology.no_coverage_gaps"].status == Status.PASS
 
 
+def test_coverage_gaps_without_aoi_is_warn_even_when_empty():
+    """total_bounds fallback must not report a confident PASS."""
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [box(0, 0, 10, 10), box(10, 0, 20, 10)]}, crs="EPSG:3857"
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s", TopologyCheck(enabled=True, no_coverage_gaps=True),
+    ))
+    assert res["topology.no_coverage_gaps"].status == Status.WARN
+    assert "total_bounds" in res["topology.no_coverage_gaps"].message
+    assert "inconclusive" in res["topology.no_coverage_gaps"].message.lower()
+
+
 def test_t_junction_network_no_internal_dangles():
     # Connected T: three lines meet; only outer ends are degree-1.
     gdf = gpd.GeoDataFrame(

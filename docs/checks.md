@@ -61,8 +61,9 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
   and it can miss gaps that open to the exterior. Prefer **`no_coverage_gaps`**
   with an explicit `aoi` or `aoi_bbox` for parcel/admin coverage.
 - **`no_coverage_gaps` without AOI** uses the layer `total_bounds` rectangle.
-  Sparse or coastal layers will report large exterior “gaps” — that is expected;
-  set an AOI to avoid false positives.
+  Sparse or coastal layers will report large exterior “gaps” — that is expected.
+  Without an explicit `aoi` / `aoi_bbox`, geoqa returns **WARN** even when zero
+  gaps are found (inconclusive), so CI does not treat total_bounds as a real AOI.
 - **`no_overlaps` + `algorithm: auto`**: pairwise (vectorized spatial index) below
   `pairwise_threshold` (default 5000); above that, a fast coverage excess-area
   metric (same idea as `coverage_area_ratio`). Pairwise results name offenders;
