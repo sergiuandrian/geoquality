@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Fingerprint cache now includes layer name / sublayer / table / query so
+  multi-layer GeoPackages cannot share a cache entry.
+- PostGIS sources are excluded from the fingerprint cache (no reliable mtime).
+- `prefer_sql` SQL-only path no longer skips the repair pipeline when
+  `geometry.fix` or `geometry.repair` is enabled.
+- Live PostGIS write-back verifies `rowcount`, refuses SRID 0 / missing EPSG,
+  and rejects `dissolve_duplicates` with `write_mode: postgis` (orphan rows).
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

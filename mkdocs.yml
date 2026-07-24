@@ -41,6 +41,7 @@ nav:
   - Custom checks (plugins): plugins.md
   - CI / pre-commit: ci.md
   - Development: development.md
+  - Engine split (Wave 3 design): architecture-engine-split.md
   - Changelog: changelog.md
 
 markdown_extensions:

@@ -19,10 +19,22 @@ def fingerprint(
     file_stat: tuple[float, int] | None,
     config_fragment: dict[str, Any],
     geoqa_version: str | None = None,
+    layer_name: str | None = None,
+    sublayer: str | None = None,
+    table: str | None = None,
+    query: str | None = None,
 ) -> str:
-    """Return a stable SHA-256 key for a layer + config + tool version."""
+    """Return a stable SHA-256 key for a layer + config + tool version.
+
+    ``layer_name`` / ``sublayer`` / ``table`` / ``query`` disambiguate multi-layer
+    files and PostGIS sources that share a redacted connection URL.
+    """
     payload = {
         "source": source,
+        "layer": layer_name,
+        "sublayer": sublayer,
+        "table": table,
+        "query": query,
         "mtime": file_stat[0] if file_stat else None,
         "size": file_stat[1] if file_stat else None,
         "config": config_fragment,
