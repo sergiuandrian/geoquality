@@ -291,10 +291,13 @@ class Suite(_Base):
         override = self.layers.get(layer_name, {})
         merged = _deep_merge(merged, override)
         cfg = resolve_layer_model().model_validate(merged)
-        # Resolve schema.path against the suite base directory when relative.
+        # Resolve relative paths against the suite YAML directory.
         if cfg.layer_schema.path:
             resolved = self.resolve_path(cfg.layer_schema.path)
             cfg.layer_schema = cfg.layer_schema.model_copy(update={"path": str(resolved)})
+        if cfg.topology.aoi:
+            resolved_aoi = self.resolve_path(cfg.topology.aoi)
+            cfg.topology = cfg.topology.model_copy(update={"aoi": str(resolved_aoi)})
         return cfg
 
     def resolve_path(self, path: str) -> Path:
@@ -366,6 +369,7 @@ def config_json_schema() -> dict[str, Any]:
         defaults=(layer_model, Field(default_factory=layer_model)),
         layers=(dict[str, layer_model], Field(default_factory=dict)),  # type: ignore[valid-type]
         report=(ReportConfig, Field(default_factory=ReportConfig)),
+        cache=(CacheConfig, Field(default_factory=CacheConfig)),
     )
     schema = schema_model.model_json_schema()
     schema["title"] = "geoqa configuration"

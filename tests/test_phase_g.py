@@ -89,6 +89,16 @@ def test_schema_ok():
     assert res["schema.precision"].status == Status.PASS
 
 
+def test_schema_missing_external_path_is_error(tmp_path: Path):
+    gdf = gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)]}, crs="EPSG:4326")
+    cfg = SchemaCheck(enabled=True, path=str(tmp_path / "does-not-exist.yml"))
+    res = schema.run(gdf, "l", "s", cfg)
+    assert len(res) == 1
+    assert res[0].check == "schema"
+    assert res[0].status == Status.ERROR
+    assert "not found" in res[0].message
+
+
 def test_metadata_missing_sidecar(tmp_path: Path):
     gpkg = tmp_path / "x.gpkg"
     gpd.GeoDataFrame({"geometry": [box(0, 0, 1, 1)]}, crs="EPSG:3857").to_file(

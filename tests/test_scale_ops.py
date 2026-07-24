@@ -65,6 +65,35 @@ layers:
     assert "chunk_size" in by["topology"].message
 
 
+def test_chunked_run_skips_attributes_unique(tmp_path: Path):
+    gpkg = tmp_path / "pts.gpkg"
+    gpd.GeoDataFrame(
+        {"id": list(range(12)), "geometry": [box(i, 0, i + 0.5, 0.5) for i in range(12)]},
+        crs="EPSG:3857",
+    ).to_file(gpkg, driver="GPKG")
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        f"""
+version: 1
+sources:
+  - path: "{gpkg.as_posix()}"
+    chunk_size: 4
+defaults:
+  crs: {{ enabled: false }}
+  duplicates: {{ enabled: false }}
+  topology: {{ enabled: false }}
+  geometry: {{ valid: true }}
+  attributes:
+    unique: [id]
+""",
+        encoding="utf-8",
+    )
+    report = run_suite(load_suite(cfg))
+    by = {r.check: r for r in report.layers[0].results}
+    assert by["attributes.unique"].status == Status.SKIP
+    assert "chunk_size" in by["attributes.unique"].message
+
+
 def test_fingerprint_cache_skips_second_run(tmp_path: Path):
     gpkg = tmp_path / "clean.gpkg"
     gpd.GeoDataFrame(

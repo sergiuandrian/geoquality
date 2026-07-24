@@ -339,6 +339,15 @@ def _run_layer_chunked(
     geom_type = None
     first_gdf = None
 
+    attrs_cfg = check_config_for(cfg, "attributes")
+    unique_cols: list[str] = []
+    if (
+        attrs_cfg is not None
+        and getattr(attrs_cfg, "enabled", True)
+        and getattr(attrs_cfg, "unique", None)
+    ):
+        unique_cols = list(attrs_cfg.unique)
+
     chunks = list(iter_file_chunks(layer))
     n_chunks = max(len(chunks), 1)
     for i, chunk in enumerate(chunks):
@@ -377,6 +386,18 @@ def _run_layer_chunked(
     lr.geometry_type = geom_type
     lr.results.extend(_merge_chunk_results(merged))
 
+    if unique_cols:
+        lr.results.append(
+            CheckResult(
+                check="attributes.unique", layer=layer.name, source=layer.source,
+                status=Status.SKIP, severity=Severity.WARN,
+                message=(
+                    f"attributes.unique skipped under chunk_size={layer.chunk_size}: "
+                    f"needs full layer context ({', '.join(unique_cols)})."
+                ),
+            )
+        )
+
     for name in CHUNK_GLOBAL_CHECKS:
         spec = registry.get(name)
         if spec is None:
@@ -412,6 +433,17 @@ def _run_layer_chunked(
     if collect_failures and first_gdf is not None:
         # Best-effort: only first chunk geometries available without full load.
         lr.failures = _collect_failures(first_gdf, lr.results)
+        if n_chunks > 1:
+            lr.results.append(
+                CheckResult(
+                    check="failures.geojson", layer=layer.name, source=layer.source,
+                    status=Status.WARN, severity=Severity.WARN,
+                    message=(
+                        "Chunk mode: failure GeoJSON / HTML map uses geometries from "
+                        "the first chunk only; offenders in later chunks may be missing."
+                    ),
+                )
+            )
 
     _maybe_write_cache(cache_dir, cache_key, lr)
     return lr
