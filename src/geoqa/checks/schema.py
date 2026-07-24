@@ -27,7 +27,21 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: SchemaCheck) -> lis
     if not cfg.enabled:
         return []
 
-    cfg = _resolve_schema(cfg, source)
+    if cfg.path:
+        path = _schema_file_path(cfg, source)
+        if path is None:
+            return [
+                result(
+                    CHECK,
+                    layer,
+                    source,
+                    Status.ERROR,
+                    f"schema path not found: {cfg.path}",
+                    severity=cfg.severity,
+                )
+            ]
+        cfg = _load_schema_file(cfg, path)
+
     results: list[CheckResult] = []
     results.extend(_check_columns(gdf, layer, source, cfg))
     results.extend(_check_geometry(gdf, layer, source, cfg))
@@ -35,23 +49,28 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: SchemaCheck) -> lis
     return results
 
 
-def _resolve_schema(cfg: SchemaCheck, source: str) -> SchemaCheck:
-    """Load external schema file when ``path`` is set; merge under inline fields."""
+def _schema_file_path(cfg: SchemaCheck, source: str) -> Path | None:
+    """Return an existing schema file path, or ``None`` if missing."""
     if not cfg.path:
-        return cfg
+        return None
     path = Path(cfg.path)
-    if not path.is_file():
-        # Try beside the layer source.
-        candidate = Path(source).resolve().parent / cfg.path
-        path = candidate if candidate.is_file() else path
-    if not path.is_file():
-        return cfg
+    if path.is_file():
+        return path
+    # Try beside the layer source (relative leftover / non-suite callers).
+    candidate = Path(source).resolve().parent / cfg.path
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+def _load_schema_file(cfg: SchemaCheck, path: Path) -> SchemaCheck:
+    """Load external schema YAML and merge under inline fields."""
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         return cfg
-    # External file provides defaults; inline config wins.
     merged = {**raw, **cfg.model_dump(exclude_unset=True)}
     merged["enabled"] = True
+    merged["path"] = str(path)
     return SchemaCheck.model_validate(merged)
 
 

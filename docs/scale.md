@@ -14,8 +14,12 @@ sources:
 
 When `chunk_size` is set, **chunk-safe** checks (`crs`, `geometry`,
 `attributes` without `unique`) run on pyogrio row batches. Checks that need
-global context (`duplicates`, `topology`) are **skipped with a warning** —
-disable `chunk_size` or run a separate full-layer pass for those.
+global context (`duplicates`, `topology`, and `attributes.unique`) are
+**skipped with a warning** — disable `chunk_size` or run a separate full-layer
+pass for those.
+
+HTML map / `--geojson-out` under chunk mode only has geometries from the
+**first chunk** (a warning is emitted when more than one chunk is read).
 
 ## PostGIS SQL pushdown
 

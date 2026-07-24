@@ -27,6 +27,12 @@ def test_list_checks():
     assert "duplicates" in result.stdout
     assert "built-in" in result.stdout
     assert "geoqa.checks" in result.stdout
+    # schema / metadata are built-ins (not mislabeled as plugin).
+    assert "schema" in result.stdout
+    lines = [ln for ln in result.stdout.splitlines() if "schema" in ln.lower()]
+    assert lines and "plugin" not in lines[0].lower()
+    meta_lines = [ln for ln in result.stdout.splitlines() if "metadata" in ln.lower()]
+    assert meta_lines and "plugin" not in meta_lines[0].lower()
 
 
 def test_run_with_workers(suite_file: Path):

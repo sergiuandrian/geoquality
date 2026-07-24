@@ -337,9 +337,9 @@ def list_checks() -> None:
     """List the available checks (built-in and plugins) and their config keys."""
     from rich.table import Table
 
-    from geoqa.registry import ENTRY_POINT_GROUP, get_registry
+    from geoqa.registry import ENTRY_POINT_GROUP, build_registry, get_registry
 
-    builtin = {"crs", "geometry", "duplicates", "attributes", "topology"}
+    builtin = {s.name for s in build_registry(include_plugins=False).specs()}
     table = Table(title="geoqa checks", show_lines=True)
     table.add_column("Check", style="bold cyan")
     table.add_column("Source", style="dim")

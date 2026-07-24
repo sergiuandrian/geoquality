@@ -14,6 +14,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `geometry.fix` or `geometry.repair` is enabled.
 - Live PostGIS write-back verifies `rowcount`, refuses SRID 0 / missing EPSG,
   and rejects `dissolve_duplicates` with `write_mode: postgis` (orphan rows).
+- `list-checks` labels `schema` and `metadata` as built-in (registry-driven).
+- Relative `topology.aoi` paths resolve against the suite YAML directory.
+- Missing external `schema.path` is an ERROR (no silent no-op).
+- Chunk mode emits WARN/SKIP for `attributes.unique` and warns when failure
+  GeoJSON uses only the first chunk.
+- Overlap scans capped by `max_pairs` with zero hits return WARN (not PASS).
+- `geoqa schema` JSON Schema includes the `cache` block.
+- Docs: repair runs after checks (detect-then-repair), not mid-pass.
 
 ## [0.6.0] - 2026-07-22
 
