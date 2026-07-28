@@ -74,6 +74,10 @@ EPSG:6933 for near-global data).
   (SRID 0 is refused) and verify each UPDATE via `rowcount`.
   **`dissolve_duplicates` cannot be combined with `write_mode: postgis`**
   (UPDATE cannot delete orphan rows); use `file` or `none` instead.
+  When the target column is typed single-part (`POLYGON`, …) but repaired
+  geometries include Multi*/collections, geoqa emits
+  `geometry.repair.postgis.column_type` **WARN** (dry-run and live) so you can
+  widen the column before a live UPDATE fails.
 
 ### `then_recheck`
 

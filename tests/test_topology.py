@@ -362,6 +362,31 @@ def test_overshoot_exact_t_junction_passes():
     assert res["topology.no_overshoots"].status == Status.PASS
 
 
+def test_multipart_overlap_flags_overlapping_parts():
+    from shapely.geometry import MultiPolygon
+
+    # Two overlapping squares in one MultiPolygon.
+    mp = MultiPolygon([box(0, 0, 10, 10), box(5, 5, 15, 15)])
+    gdf = gpd.GeoDataFrame({"geometry": [mp]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_multipart_overlap=True, min_area=0.1),
+    ))
+    assert res["topology.no_multipart_overlap"].status == Status.WARN
+    assert res["topology.no_multipart_overlap"].n_failed == 1
+
+
+def test_multipart_touching_parts_pass():
+    from shapely.geometry import MultiPolygon
+
+    mp = MultiPolygon([box(0, 0, 10, 10), box(10, 0, 20, 10)])
+    gdf = gpd.GeoDataFrame({"geometry": [mp]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s", TopologyCheck(enabled=True, no_multipart_overlap=True),
+    ))
+    assert res["topology.no_multipart_overlap"].status == Status.PASS
+
+
 def test_overlaps_algorithm_coverage():
     gdf = gpd.GeoDataFrame(
         {"geometry": [square(0, 0), square(5, 0)]}, crs="EPSG:3857"

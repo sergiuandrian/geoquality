@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Topology: `no_multipart_overlap` (MultiPolygon / MultiLineString parts must
+  not overlap; touching OK). Enabled in `cadastre_coverage` / `admin_coverage`.
+- PostGIS repair write-back emits `geometry.repair.postgis.column_type` **WARN**
+  when the column is typed single-part (e.g. `POLYGON`) but repaired geometries
+  include Multi*/collections.
+
 ## [0.7.2] - 2026-07-28
 
 ### Added

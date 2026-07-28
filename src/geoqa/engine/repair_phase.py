@@ -80,6 +80,16 @@ def apply_repair(
                     message=pg["message"],
                 )
             )
+            col_warn = pg.get("column_warning")
+            if col_warn:
+                lr.results.append(
+                    CheckResult(
+                        check="geometry.repair.postgis.column_type",
+                        layer=layer.name, source=layer.source,
+                        status=Status.WARN, severity=Severity.WARN,
+                        message=col_warn,
+                    )
+                )
         if repair_cfg.then_recheck:
             _then_recheck(gdf, layer, cfg, lr)
         return gdf

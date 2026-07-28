@@ -134,6 +134,7 @@ def test_topology_ruleset_expands():
     assert cfg.no_overlaps is True
     assert cfg.no_coverage_gaps is True
     assert cfg.no_spillover is True
+    assert cfg.no_multipart_overlap is True
     assert cfg.coincident_edges is True
     assert cfg.min_area == 0.5
     assert cfg.ruleset == "cadastre_coverage"

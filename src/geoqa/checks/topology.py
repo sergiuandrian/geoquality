@@ -63,6 +63,8 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: TopologyCheck) -> l
         results.append(
             _overshoots(valid, types, layer, source, cfg, to_wgs84)
         )
+    if cfg.no_multipart_overlap:
+        results.append(_multipart_overlap(valid, types, layer, source, cfg))
     if cfg.coincident_edges:
         results.append(_coincident_edges(valid, types, layer, source, cfg))
 
@@ -883,6 +885,71 @@ def _overshoots(valid, types, layer, source, cfg, to_wgs84) -> CheckResult:
         "No overshoot stubs." if flagged == 0
         else f"{flagged} overshoot stub(s) past a junction.",
         severity=cfg.severity, n_total=len(lines), n_failed=flagged, issues=issues,
+    )
+
+
+def _multipart_overlap(valid, types, layer, source, cfg) -> CheckResult:
+    """Parts of MultiPolygon / MultiLineString must not overlap (touching is OK).
+
+    Uses raw part geometries — do not ``make_valid`` the multipart as a whole
+    (GEOS often treats overlapping or edge-adjacent MultiPolygons as invalid and
+    ``make_valid`` rewrites parts, which hides real overlaps or invents false ones).
+    """
+    feats = valid[types.isin(["MultiPolygon", "MultiLineString"])]
+    if feats.empty:
+        return result(
+            CHECK + ".no_multipart_overlap", layer, source, Status.SKIP,
+            "No multipart features.",
+        )
+
+    issues: list[Issue] = []
+    n_failed = 0
+    for idx, geom in feats.geometry.items():
+        if geom is None or geom.is_empty or not hasattr(geom, "geoms"):
+            continue
+        parts = list(geom.geoms)
+        if len(parts) < 2:
+            continue
+        overlap_metric = 0.0
+        for i in range(len(parts)):
+            for j in range(i + 1, len(parts)):
+                a, b = parts[i], parts[j]
+                try:
+                    if a.touches(b) or not a.intersects(b):
+                        continue
+                    inter = a.intersection(b)
+                except Exception:  # noqa: BLE001
+                    continue
+                if inter is None or inter.is_empty:
+                    continue
+                area = float(inter.area)
+                length = float(inter.length) if hasattr(inter, "length") else 0.0
+                # Polygon parts: area overlap only (shared edges have area 0).
+                if area > cfg.min_area:
+                    overlap_metric = max(overlap_metric, area)
+                elif (
+                    a.geom_type in ("LineString", "LinearRing")
+                    and b.geom_type in ("LineString", "LinearRing")
+                    and length > max(cfg.min_area, 1e-6)
+                ):
+                    overlap_metric = max(overlap_metric, length)
+        if overlap_metric <= 0:
+            continue
+        n_failed += 1
+        if len(issues) < 200:
+            issues.append(
+                Issue(
+                    message=f"multipart parts overlap metric={overlap_metric:.6g}",
+                    feature_id=idx,
+                    row_index=idx,
+                    detail={"metric": overlap_metric, "n_parts": len(parts)},
+                )
+            )
+    return result(
+        CHECK + ".no_multipart_overlap", layer, source, status_for(n_failed, cfg.severity),
+        "No overlapping multipart parts." if n_failed == 0
+        else f"{n_failed} multipart feature(s) with overlapping parts.",
+        severity=cfg.severity, n_total=len(feats), n_failed=n_failed, issues=issues,
     )
 
 

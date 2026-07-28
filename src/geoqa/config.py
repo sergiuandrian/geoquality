@@ -136,6 +136,7 @@ class TopologyCheck(_Base):
     no_dangles: bool = False  # line endpoints should connect to the network
     no_undershoots: bool = False  # degree-1 endpoints near another line (almost connected)
     no_overshoots: bool = False  # short stubs past a crossing/touching line
+    no_multipart_overlap: bool = False  # parts of Multi* geometries must not overlap
     coincident_edges: bool = False  # almost-adjacent / ragged shared boundaries
     coverage_area_ratio: bool = False  # fast layer self-overlap metric
     # Tolerances are expressed in metres (data is reprojected to a metric CRS).

@@ -215,9 +215,40 @@ def test_postgis_write_uses_active_geometry_column(monkeypatch):
     monkeypatch.setattr(
         "sqlalchemy.create_engine", lambda *a, **k: OkEngine()
     )
+    monkeypatch.setattr(
+        "geoqa.repair.postgis_write._lookup_geometry_column_type",
+        lambda *a, **k: "GEOMETRY",
+    )
     result = write_postgis(gdf, cfg, allow_write=True)
     assert result["ok"] is True
     assert result["updated"] == 1
+
+
+def test_postgis_column_type_warns_on_polygon_vs_multipolygon(monkeypatch):
+    from shapely.geometry import MultiPolygon
+
+    gdf = gpd.GeoDataFrame(
+        {
+            "id": [1],
+            "geometry": [MultiPolygon([box(0, 0, 1, 1), box(2, 2, 3, 3)])],
+        },
+        crs="EPSG:4326",
+    )
+    cfg = PostgisWriteConfig(
+        connection="postgresql://u:p@localhost/db",
+        table="public.t",
+        dry_run=True,
+        geom_column="geom",
+    )
+    monkeypatch.setattr(
+        "geoqa.repair.postgis_write._lookup_geometry_column_type",
+        lambda *a, **k: "POLYGON",
+    )
+    result = write_postgis(gdf, cfg, allow_write=False)
+    assert result["ok"] is True
+    assert result["column_warning"]
+    assert "POLYGON" in result["column_warning"]
+    assert "WARN" in result["message"]
     gdf = gpd.GeoDataFrame(
         {"id": [1, 2], "geometry": [Point(0, 0), Point(1, 1)]}, crs="EPSG:4326"
     )
