@@ -59,6 +59,9 @@ class RepairConfig(_Base):
     # none = in-memory only; file = GeoPackage sidecar; postgis = UPDATE (dry_run default)
     write_mode: str = "file"
     postgis: PostgisWriteConfig = Field(default_factory=PostgisWriteConfig)
+    # After repair, re-run geometry (+ topology if enabled) on the repaired layer.
+    # Results are reported as ``*.after_repair``; pre-repair check results are kept.
+    then_recheck: bool = False
 
     @field_validator("write_mode")
     @classmethod
@@ -129,7 +132,9 @@ class TopologyCheck(_Base):
     no_overlaps: bool = False  # polygons should not overlap each other
     no_gaps: bool = False  # dissolve-union interior holes (heuristic)
     no_coverage_gaps: bool = False  # AOI/extent minus union (coverage gaps)
+    no_spillover: bool = False  # features extending outside an explicit AOI
     no_dangles: bool = False  # line endpoints should connect to the network
+    no_undershoots: bool = False  # degree-1 endpoints near another line (almost connected)
     coincident_edges: bool = False  # almost-adjacent / ragged shared boundaries
     coverage_area_ratio: bool = False  # fast layer self-overlap metric
     # Tolerances are expressed in metres (data is reprojected to a metric CRS).

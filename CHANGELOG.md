@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-28
+
+### Added
+- Live PostGIS write-back integration test (`pytest -m postgis`, needs
+  `GEOQA_PG_URL`); dry-run refusal path covered without the flag.
+- `geometry.repair.then_recheck` — optional re-run of geometry (+ topology) on
+  the repaired layer as `*.after_repair` results.
+- Topology: `no_spillover` (features outside explicit AOI) and `no_undershoots`
+  (degree-1 endpoints near but not touching another line). Rulesets
+  `cadastre_coverage` / `admin_coverage` enable spillover; `network` enables
+  undershoots.
+
+### Fixed
+- PostGIS live write-back reads the active GeoDataFrame geometry column
+  (e.g. `geom`) instead of assuming a column named `geometry`.
+
+### Meta
+- Package version: **0.7.1**; pre-commit / CI docs pin examples to `v0.7.1`.
+
 ## [0.7.0] - 2026-07-24
 
 ### Changed
@@ -137,7 +156,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and topology over folders of geospatial files, with console/JSON/HTML reports
   and a pre-commit hook.
 
-[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/sergiuandrian/geoquality/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.7.1
 [0.7.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.7.0
 [0.6.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.6.0
 [0.5.0]: https://github.com/sergiuandrian/geoquality/releases/tag/v0.5.0

@@ -4,7 +4,7 @@ geoqa can **repair** geometries after reporting problems (detect-then-repair).
 The safe default is still a **sidecar file** — the source PostGIS database is
 never mutated unless you explicitly opt in. Repair runs **after** all checks in
 the same `geoqa run`, so topology/duplicates still see the original geometries
-unless you re-run against the fixed output.
+unless you enable `then_recheck` or re-run against the fixed output.
 
 ## Legacy: `geometry.fix`
 
@@ -33,6 +33,7 @@ geometry:
     drop_slivers_area: 0.5       # m² — drop polygon parts below this area
     dissolve_duplicates: true    # keep first of exact-duplicate WKB groups
     write_mode: file             # none | file | postgis
+    then_recheck: false          # re-run geometry (+ topology) as *.after_repair
     postgis:
       connection: "postgresql+psycopg://user@host/db"
       table: "public.parcels"
@@ -63,8 +64,9 @@ EPSG:6933 for near-global data).
 
 - **`none`** — repair geometries in memory for write-back / audit only.
   **Checks in the same run still see the unrepaired layer** (repair runs after
-  the check loop). Use a second pass or inspect the repaired sidecar if you
-  need validation against fixed geometries.
+  the check loop) unless `then_recheck: true`. Use a second pass or inspect the
+  repaired sidecar if you need validation against fixed geometries without
+  recheck.
 - **`file`** — GeoPackage under `--fix-output` (required, else a warning).
 - **`postgis`** — `UPDATE` by `id_column`. **`dry_run: true` by default.**
   Live writes need both `dry_run: false` **and** CLI
@@ -72,6 +74,14 @@ EPSG:6933 for near-global data).
   (SRID 0 is refused) and verify each UPDATE via `rowcount`.
   **`dissolve_duplicates` cannot be combined with `write_mode: postgis`**
   (UPDATE cannot delete orphan rows); use `file` or `none` instead.
+
+### `then_recheck`
+
+When `then_recheck: true`, geoqa re-runs **geometry** and (if enabled)
+**topology** on the repaired layer and appends results named
+`*.after_repair` (e.g. `geometry.valid.after_repair`). Pre-repair results are
+kept so you can see both the original failures and the post-repair state.
+Default is `false`.
 
 ### Audit trail
 
@@ -84,5 +94,8 @@ EPSG:6933 for near-global data).
   GeometryCollection).
 - PostGIS write-back updates geometry only (no attribute merge, no row
   deletes). Wrong `id_column` values are reported as write failures.
+  `make_valid` may promote Polygon → MultiPolygon; typed PostGIS columns
+  (`geometry(Polygon, …)`) can reject the UPDATE — prefer a generic
+  `geometry` column or MultiPolygon for write-back targets.
 - Snap / sliver ops reproject to a metric CRS and back; expect tiny
   coordinate drift.

@@ -75,11 +75,12 @@ def write_postgis(
         table_sql = quote_table(cfg.table)
         id_col = cfg.id_column
         geom_col = cfg.geom_column
+        active_geom = gdf.geometry.name
         updated = 0
         missed = 0
         with engine.begin() as conn:
             for _, row in gdf.iterrows():
-                geom = row.geometry
+                geom = row[active_geom]
                 if geom is None:
                     continue
                 pk = row[id_col]

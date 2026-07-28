@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geoqa"
-version = "0.7.0"
+version = "0.7.1"
 description = "Data quality for geospatial data - Great Expectations for GIS. Validate geometry, CRS, topology, duplicates and attributes from a single YAML config."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -82,6 +82,9 @@ ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "postgis: needs live PostGIS (set GEOQA_PG_URL); skipped when unset",
+]
 addopts = "--cov=geoqa --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]

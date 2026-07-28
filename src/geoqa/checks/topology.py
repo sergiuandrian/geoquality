@@ -49,9 +49,15 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: TopologyCheck) -> l
         results.append(_gaps(valid, types, layer, source, cfg))
     if cfg.no_coverage_gaps:
         results.append(_coverage_gaps(valid, types, layer, source, cfg, metric_gdf.crs, source_crs))
+    if cfg.no_spillover:
+        results.append(_spillover(valid, types, layer, source, cfg, metric_gdf.crs, source_crs))
     if cfg.no_dangles:
         results.append(
             _dangles(valid, types, layer, source, cfg, to_wgs84, metric_gdf.crs, source_crs)
+        )
+    if cfg.no_undershoots:
+        results.append(
+            _undershoots(valid, types, layer, source, cfg, to_wgs84)
         )
     if cfg.coincident_edges:
         results.append(_coincident_edges(valid, types, layer, source, cfg))
@@ -515,6 +521,58 @@ def _coverage_gaps(valid, types, layer, source, cfg, metric_crs, source_crs) -> 
     )
 
 
+def _spillover(valid, types, layer, source, cfg, metric_crs, source_crs) -> CheckResult:
+    """Features extending outside an explicit AOI (complement of coverage gaps)."""
+    geoms = valid[types.isin(["Polygon", "MultiPolygon", "LineString", "MultiLineString"])]
+    if geoms.empty:
+        return result(
+            CHECK + ".no_spillover", layer, source, Status.SKIP, "No polygon/line features."
+        )
+    if cfg.aoi is None and cfg.aoi_bbox is None:
+        return result(
+            CHECK + ".no_spillover", layer, source, Status.SKIP,
+            "no_spillover requires topology.aoi or aoi_bbox (skipped).",
+            severity=Severity.WARN,
+        )
+
+    aoi = _resolve_aoi(cfg, geoms.total_bounds, metric_crs, source_crs)
+    if aoi is None or aoi.is_empty:
+        return result(
+            CHECK + ".no_spillover", layer, source, Status.ERROR,
+            "Could not resolve AOI for spillover check.", severity=cfg.severity,
+        )
+
+    issues: list[Issue] = []
+    for idx, geom in geoms.geometry.items():
+        try:
+            g = _safe_valid(geom)
+            if g is None or g.is_empty:
+                continue
+            excess = g.difference(aoi)
+        except Exception:  # noqa: BLE001
+            continue
+        if excess is None or excess.is_empty:
+            continue
+        # Length for lines, area for polygons — ignore tiny noise via min_area when area-like.
+        metric = float(excess.area) if excess.area > 0 else float(excess.length)
+        if metric <= cfg.min_area:
+            continue
+        issues.append(
+            Issue(
+                message=f"spillover outside AOI metric={metric:.6g}",
+                feature_id=idx,
+                row_index=idx,
+                detail={"metric": metric},
+            )
+        )
+    n = len(issues)
+    return result(
+        CHECK + ".no_spillover", layer, source, status_for(n, cfg.severity),
+        "No features outside AOI." if n == 0 else f"{n} feature(s) spill outside AOI.",
+        severity=cfg.severity, n_total=len(geoms), n_failed=n, issues=issues[:200],
+    )
+
+
 def _iter_lines(geom):
     if geom.geom_type == "LineString":
         yield geom
@@ -595,6 +653,98 @@ def _dangles(valid, types, layer, source, cfg, to_wgs84, metric_crs, source_crs)
         CHECK + ".no_dangles", layer, source, status_for(n, cfg.severity),
         "No dangling endpoints." if n == 0 else f"{n} dangling line endpoint(s) detected.",
         severity=cfg.severity, n_total=len(lines), n_failed=n, issues=issues,
+    )
+
+
+def _undershoots(valid, types, layer, source, cfg, to_wgs84) -> CheckResult:
+    """Degree-1 endpoints that lie within snap_tolerance of another line (almost connected)."""
+    lines = valid[types.isin(["LineString", "MultiLineString"])]
+    if lines.empty:
+        return result(
+            CHECK + ".no_undershoots", layer, source, Status.SKIP, "No line features."
+        )
+    tol = cfg.snap_tolerance if cfg.snap_tolerance > 0 else _DEFAULT_BOUNDARY_EPS
+    min_degree = max(1, cfg.min_degree)
+
+    def _key(pt: tuple[float, float]) -> tuple[float, float]:
+        return (round(pt[0] / tol), round(pt[1] / tol))
+
+    counts: Counter = Counter()
+    where: dict = defaultdict(list)
+    repr_pt: dict = {}
+    for idx, geom in lines.geometry.items():
+        for ls in _iter_lines(geom):
+            coords = list(ls.coords)
+            if len(coords) < 2:
+                continue
+            for pt in (coords[0], coords[-1]):
+                key = _key(pt)
+                counts[key] += 1
+                where[key].append(idx)
+                repr_pt.setdefault(key, (float(pt[0]), float(pt[1])))
+
+    # Build a MultiLineString index of all lines for nearest-distance queries.
+    try:
+        line_list = list(lines.geometry)
+        tree = shapely.STRtree(line_list)
+    except Exception as exc:  # noqa: BLE001
+        return result(
+            CHECK + ".no_undershoots", layer, source, Status.ERROR,
+            f"undershoot search failed: {exc}", severity=cfg.severity,
+        )
+
+    issues: list[Issue] = []
+    flagged = 0
+    for key, degree in counts.items():
+        if degree >= min_degree:
+            continue
+        x, y = repr_pt[key]
+        pt = Point(x, y)
+        owner = where[key][0]
+        try:
+            # Candidates near the endpoint; exclude the owner feature's own geometry.
+            idxs = tree.query(pt.buffer(tol), predicate="intersects")
+        except Exception:  # noqa: BLE001
+            continue
+        near = False
+        for j in idxs:
+            other_idx = lines.index[j]
+            if other_idx == owner:
+                continue
+            try:
+                dist = float(line_list[j].distance(pt))
+            except Exception:  # noqa: BLE001
+                continue
+            # Touching (dist ~ 0) is a legitimate T-junction / connection, not an undershoot.
+            if 1e-9 < dist <= tol:
+                near = True
+                break
+        if not near:
+            continue
+        flagged += 1
+        if len(issues) < 200:
+            lon, lat = _to_lonlat(x, y, to_wgs84)
+            detail: dict[str, Any] = {"x": x, "y": y, "degree": int(degree), "tolerance": tol}
+            if lon is not None and lat is not None:
+                detail["lon"] = lon
+                detail["lat"] = lat
+            issues.append(
+                Issue(
+                    message=(
+                        f"undershoot endpoint near another line at "
+                        f"({lon:.6f}, {lat:.6f})" if lon is not None
+                        else f"undershoot endpoint near another line at ({x:.3f}, {y:.3f})"
+                    ),
+                    feature_id=owner,
+                    row_index=owner,
+                    detail=detail,
+                )
+            )
+    return result(
+        CHECK + ".no_undershoots", layer, source, status_for(flagged, cfg.severity),
+        "No undershoot endpoints." if flagged == 0
+        else f"{flagged} undershoot endpoint(s) near another line.",
+        severity=cfg.severity, n_total=len(lines), n_failed=flagged, issues=issues,
     )
 
 

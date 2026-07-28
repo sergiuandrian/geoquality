@@ -266,6 +266,65 @@ def test_coverage_area_ratio_detects_overlap():
     assert res["topology.coverage_area_ratio"].status == Status.WARN
 
 
+def test_spillover_flags_feature_outside_aoi():
+    # AOI [0,0,10,10]; second poly sticks out to the east.
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [box(0, 0, 5, 5), box(8, 0, 15, 5)]}, crs="EPSG:3857"
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True, no_spillover=True, aoi_bbox=[0, 0, 10, 10], min_area=0.1,
+        ),
+    ))
+    assert res["topology.no_spillover"].status == Status.WARN
+    assert res["topology.no_spillover"].n_failed == 1
+
+
+def test_spillover_without_aoi_skips():
+    gdf = gpd.GeoDataFrame({"geometry": [box(0, 0, 5, 5)]}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s", TopologyCheck(enabled=True, no_spillover=True),
+    ))
+    assert res["topology.no_spillover"].status == Status.SKIP
+
+
+def test_undershoot_near_another_line():
+    # Horizontal trunk; vertical stub stops 0.5 m short of touching (undershoot).
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (20, 0)]),
+                LineString([(10, 5), (10, 0.5)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_undershoots=True, snap_tolerance=1.0),
+    ))
+    assert res["topology.no_undershoots"].status == Status.WARN
+    assert res["topology.no_undershoots"].n_failed >= 1
+
+
+def test_undershoot_connected_t_junction_passes():
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (20, 0)]),
+                LineString([(10, 5), (10, 0)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_undershoots=True, snap_tolerance=1.0),
+    ))
+    assert res["topology.no_undershoots"].status == Status.PASS
+
+
 def test_overlaps_algorithm_coverage():
     gdf = gpd.GeoDataFrame(
         {"geometry": [square(0, 0), square(5, 0)]}, crs="EPSG:3857"

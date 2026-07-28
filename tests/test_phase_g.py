@@ -133,6 +133,7 @@ def test_topology_ruleset_expands():
     assert cfg.enabled is True
     assert cfg.no_overlaps is True
     assert cfg.no_coverage_gaps is True
+    assert cfg.no_spillover is True
     assert cfg.coincident_edges is True
     assert cfg.min_area == 0.5
     assert cfg.ruleset == "cadastre_coverage"
@@ -146,6 +147,7 @@ def test_topology_ruleset_unknown():
 def test_expand_ruleset_explicit_wins():
     out = expand_ruleset("network", {"ruleset": "network", "ignore_boundary": False})
     assert out["no_dangles"] is True
+    assert out["no_undershoots"] is True
     assert out["ignore_boundary"] is False
     assert "cadastre_coverage" in RULESETS
 
