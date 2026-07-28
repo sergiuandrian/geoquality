@@ -14,8 +14,12 @@ sources:
 
 When `chunk_size` is set, **chunk-safe** checks (`crs`, `geometry`,
 `attributes` without `unique`) run on pyogrio row batches. Checks that need
-global context (`duplicates`, `topology`) are **skipped with a warning** —
-disable `chunk_size` or run a separate full-layer pass for those.
+global context (`duplicates`, `topology`, and `attributes.unique`) are
+**skipped with a warning** — disable `chunk_size` or run a separate full-layer
+pass for those.
+
+HTML map / `--geojson-out` under chunk mode only has geometries from the
+**first chunk** (a warning is emitted when more than one chunk is read).
 
 ## PostGIS SQL pushdown
 
@@ -29,8 +33,15 @@ sources:
 With `prefer_sql: true` and a `table` (not a free-form `query`), geometry
 `valid` / `no_empty` / `no_missing` run as `ST_IsValid` / `ST_IsEmpty` / null
 probes in the database. If the layer config only enables those geometry checks
-(no CRS/duplicates/topology/attribute rules), geoqa **does not** materialize a
-GeoDataFrame.
+(no CRS/duplicates/topology/attribute rules, and no `fix`/`repair`), geoqa
+**does not** materialize a GeoDataFrame.
+
+**Issue IDs:** SQL pushdown reports offenders by PostgreSQL `ctid` (in
+`Issue.feature_id` / detail). In-Python geometry checks use GeoDataFrame row
+indices. Do not mix the two when joining failures back to source rows.
+
+**Repair:** if `geometry.fix` or `geometry.repair.enabled` is set, geoqa
+materializes the layer and runs the repair pipeline — SQL-only is skipped.
 
 ## Tiled topology overlaps
 
@@ -55,9 +66,15 @@ cache:
   dir: .geoqa/cache
 ```
 
-Cache key = hash(file mtime + size + layer config fragment + geoqa version).
-When a prior run for that fingerprint was all `pass`/`skip`, the layer is
-skipped. Use `geoqa run --no-cache` to force a full run.
+Cache key = hash(file mtime + size + **layer name** + sublayer/table/query +
+layer config fragment + geoqa version). When a prior run for that fingerprint
+was all `pass`/`skip`, the layer is skipped. Use `geoqa run --no-cache` to
+force a full run.
+
+**PostGIS sources are never fingerprint-cached.** Connection URLs have no
+reliable mtime/size, so a PASS would never invalidate after table updates.
+Leave `cache.enabled: false` (default) for DB workflows, or expect every
+PostGIS layer to re-run on each invocation even when cache is on for files.
 
 ## Progress
 

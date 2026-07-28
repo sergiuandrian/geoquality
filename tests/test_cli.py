@@ -27,6 +27,12 @@ def test_list_checks():
     assert "duplicates" in result.stdout
     assert "built-in" in result.stdout
     assert "geoqa.checks" in result.stdout
+    # schema / metadata are built-ins (not mislabeled as plugin).
+    assert "schema" in result.stdout
+    lines = [ln for ln in result.stdout.splitlines() if "schema" in ln.lower()]
+    assert lines and "plugin" not in lines[0].lower()
+    meta_lines = [ln for ln in result.stdout.splitlines() if "metadata" in ln.lower()]
+    assert meta_lines and "plugin" not in meta_lines[0].lower()
 
 
 def test_run_with_workers(suite_file: Path):
@@ -39,7 +45,11 @@ def test_init_writes_config(tmp_path: Path):
     result = runner.invoke(app, ["init", "-p", str(target)])
     assert result.exit_code == 0
     assert target.exists()
-    assert "version: 1" in target.read_text(encoding="utf-8")
+    text = target.read_text(encoding="utf-8")
+    assert "version: 1" in text
+    assert "repair:" in text
+    assert "no_coverage_gaps: true" in text
+    assert not any(ln.strip() == "no_gaps: true" for ln in text.splitlines())
 
     # Refuses to overwrite without --force.
     again = runner.invoke(app, ["init", "-p", str(target)])
@@ -55,6 +65,8 @@ def test_init_profile_parcels(tmp_path: Path):
     text = target.read_text(encoding="utf-8")
     assert "Parcels / cadastre" in text
     assert "cadastre_coverage" in text
+    # Demoted to a comment; ruleset covers no_coverage_gaps.
+    assert not any(ln.strip() == "no_gaps: true" for ln in text.splitlines())
     # Profile must be a valid suite config.
     from geoqa.config import load_suite
 

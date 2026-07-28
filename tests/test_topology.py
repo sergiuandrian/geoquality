@@ -138,6 +138,19 @@ def test_coverage_gaps_complete_aoi_passes():
     assert res["topology.no_coverage_gaps"].status == Status.PASS
 
 
+def test_coverage_gaps_without_aoi_is_warn_even_when_empty():
+    """total_bounds fallback must not report a confident PASS."""
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [box(0, 0, 10, 10), box(10, 0, 20, 10)]}, crs="EPSG:3857"
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s", TopologyCheck(enabled=True, no_coverage_gaps=True),
+    ))
+    assert res["topology.no_coverage_gaps"].status == Status.WARN
+    assert "total_bounds" in res["topology.no_coverage_gaps"].message
+    assert "inconclusive" in res["topology.no_coverage_gaps"].message.lower()
+
+
 def test_t_junction_network_no_internal_dangles():
     # Connected T: three lines meet; only outer ends are degree-1.
     gdf = gpd.GeoDataFrame(
@@ -286,3 +299,24 @@ def test_pairwise_50k_synthetic_budget():
     assert res["topology.no_overlaps"].status == Status.PASS
     # Soft budget: keep generous for CI runners; fail only on pathological slowdown.
     assert elapsed < 120.0, f"50k pairwise overlaps took {elapsed:.1f}s"
+
+
+def test_max_pairs_truncation_with_zero_hits_is_warn():
+    # Many candidate pairs from sindex, but none are true overlaps after area filter;
+    # with a tiny max_pairs cap the scan is incomplete → WARN, not PASS.
+    n = 40
+    # Slightly overlapping neighbors so sindex returns many pairs; min_area huge → 0 hits.
+    geoms = [box(i * 0.5, 0, i * 0.5 + 1, 1) for i in range(n)]
+    gdf = gpd.GeoDataFrame({"geometry": geoms}, crs="EPSG:3857")
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(
+            enabled=True,
+            no_overlaps=True,
+            algorithm="pairwise",
+            max_pairs=5,
+            min_area=1e9,
+        ),
+    ))
+    assert res["topology.no_overlaps"].status == Status.WARN
+    assert "max_pairs" in res["topology.no_overlaps"].message

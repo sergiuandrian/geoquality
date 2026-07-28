@@ -116,6 +116,7 @@ def test_postgis_write_dry_run_default():
     )
     result = write_postgis(gdf, cfg, allow_write=False)
     assert result["dry_run"] is True
+    assert result["ok"] is True
     assert "dry_run" in result["message"]
     assert result["updated"] == 0
 
@@ -129,9 +130,75 @@ def test_postgis_write_refuses_without_allow_flag():
     )
     result = write_postgis(gdf, cfg, allow_write=False)
     assert result["dry_run"] is True
+    assert result["ok"] is True
     assert result["updated"] == 0
+
+
+def test_postgis_write_refuses_missing_epsg():
+    gdf = gpd.GeoDataFrame(
+        {"id": [1], "geometry": [Point(0, 0)]}, crs=None
+    )
+    cfg = PostgisWriteConfig(
+        connection="postgresql://u:p@localhost/db", table="t", dry_run=False
+    )
+    result = write_postgis(gdf, cfg, allow_write=True)
+    assert result["ok"] is False
+    assert result["updated"] == 0
+    assert "EPSG" in result["message"]
+
+
+def test_postgis_write_rowcount_miss_is_failure(monkeypatch):
+    gdf = gpd.GeoDataFrame(
+        {"id": [1, 2], "geometry": [Point(0, 0), Point(1, 1)]}, crs="EPSG:4326"
+    )
+    cfg = PostgisWriteConfig(
+        connection="postgresql://u:p@localhost/db",
+        table="public.t",
+        dry_run=False,
+    )
+
+    class FakeResult:
+        def __init__(self, n):
+            self.rowcount = n
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, stmt, params=None):
+            # First id matches, second misses
+            return FakeResult(1 if params and params.get("pk") == 1 else 0)
+
+    class FakeEngine:
+        def begin(self):
+            return FakeConn()
+
+        def dispose(self):
+            pass
+
+    import sqlalchemy
+
+    monkeypatch.setattr(sqlalchemy, "create_engine", lambda *_a, **_k: FakeEngine())
+    result = write_postgis(gdf, cfg, allow_write=True)
+    assert result["ok"] is False
+    assert result["updated"] == 1
+    assert result["missed"] == 1
+    assert "failed" in result["message"]
 
 
 def test_repair_config_rejects_bad_write_mode():
     with pytest.raises(Exception):
         RepairConfig(write_mode="s3")
+
+
+def test_repair_config_rejects_dissolve_with_postgis():
+    with pytest.raises(Exception, match="dissolve_duplicates"):
+        RepairConfig(
+            enabled=True,
+            dissolve_duplicates=True,
+            write_mode="postgis",
+            postgis=PostgisWriteConfig(connection="postgresql://u@h/db", table="t"),
+        )

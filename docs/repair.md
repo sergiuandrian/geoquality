@@ -1,8 +1,10 @@
 # Geometry repair
 
-geoqa can **repair** geometries after (or instead of) only reporting problems.
+geoqa can **repair** geometries after reporting problems (detect-then-repair).
 The safe default is still a **sidecar file** — the source PostGIS database is
-never mutated unless you explicitly opt in.
+never mutated unless you explicitly opt in. Repair runs **after** all checks in
+the same `geoqa run`, so topology/duplicates still see the original geometries
+unless you re-run against the fixed output.
 
 ## Legacy: `geometry.fix`
 
@@ -59,12 +61,17 @@ EPSG:6933 for near-global data).
 
 ### Write modes
 
-- **`none`** — repair in memory only (checks see repaired data for later
-  steps; nothing written).
+- **`none`** — repair geometries in memory for write-back / audit only.
+  **Checks in the same run still see the unrepaired layer** (repair runs after
+  the check loop). Use a second pass or inspect the repaired sidecar if you
+  need validation against fixed geometries.
 - **`file`** — GeoPackage under `--fix-output` (required, else a warning).
 - **`postgis`** — `UPDATE` by `id_column`. **`dry_run: true` by default.**
   Live writes need both `dry_run: false` **and** CLI
-  `--i-know-what-im-doing`.
+  `--i-know-what-im-doing`. Live writes require a resolvable EPSG CRS
+  (SRID 0 is refused) and verify each UPDATE via `rowcount`.
+  **`dissolve_duplicates` cannot be combined with `write_mode: postgis`**
+  (UPDATE cannot delete orphan rows); use `file` or `none` instead.
 
 ### Audit trail
 
@@ -75,6 +82,7 @@ EPSG:6933 for near-global data).
 
 - `make_valid` can change geometry type (e.g. Polygon → MultiPolygon /
   GeometryCollection).
-- PostGIS write-back updates geometry only (no attribute merge).
+- PostGIS write-back updates geometry only (no attribute merge, no row
+  deletes). Wrong `id_column` values are reported as write failures.
 - Snap / sliver ops reproject to a metric CRS and back; expect tiny
   coordinate drift.

@@ -108,7 +108,11 @@ defaults:
     allowed_epsg: [4326, 3857]
   geometry:
     valid: true
-    fix: false             # set true to auto-repair with make_valid()
+    # Prefer the repair pipeline (sidecar file). Legacy: fix: true
+    repair:
+      enabled: false
+      make_valid: true
+      write_mode: file     # none | file | postgis (dry_run default)
   duplicates:
     exact: true
     fuzzy:
@@ -135,7 +139,10 @@ layers:
     topology:
       enabled: true
       no_overlaps: true
-      no_gaps: true
+      no_coverage_gaps: true
+      # Set an AOI — without it, coverage gaps vs total_bounds is WARN/inconclusive:
+      # aoi: "data/aoi.gpkg"
+      # aoi_bbox: [minx, miny, maxx, maxy]
 """
 
 
@@ -337,9 +344,9 @@ def list_checks() -> None:
     """List the available checks (built-in and plugins) and their config keys."""
     from rich.table import Table
 
-    from geoqa.registry import ENTRY_POINT_GROUP, get_registry
+    from geoqa.registry import ENTRY_POINT_GROUP, build_registry, get_registry
 
-    builtin = {"crs", "geometry", "duplicates", "attributes", "topology"}
+    builtin = {s.name for s in build_registry(include_plugins=False).specs()}
     table = Table(title="geoqa checks", show_lines=True)
     table.add_column("Check", style="bold cyan")
     table.add_column("Source", style="dim")

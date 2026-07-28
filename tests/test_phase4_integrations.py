@@ -127,11 +127,12 @@ def test_config_json_schema_describes_checks():
     schema = config_json_schema()
     assert schema["title"] == "geoqa configuration"
     assert "properties" in schema
-    assert {"version", "sources", "defaults", "layers"} <= set(schema["properties"])
+    assert {"version", "sources", "defaults", "layers", "cache"} <= set(schema["properties"])
     # Built-in check models are referenced in the definitions.
     defs = schema.get("$defs", {})
     assert "TopologyCheck" in defs
     assert "AttributesCheck" in defs
+    assert "CacheConfig" in defs
 
 
 # ---- CLI ----

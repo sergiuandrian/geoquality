@@ -83,7 +83,10 @@ defaults:
     allowed_epsg: [4326, 3857]
   geometry:
     valid: true
-    fix: false             # true -> repair with make_valid() and export
+    repair:                # prefer over legacy fix: true — see docs/repair.md
+      enabled: false
+      make_valid: true
+      write_mode: file
   duplicates:
     exact: true
     fuzzy: { enabled: true, predicate: intersects, min_overlap: 0.9 }
@@ -95,7 +98,11 @@ layers:
       unique: [parcel_id]
       domains:
         zone: { allowed: [residential, commercial, industrial] }
-    topology: { enabled: true, no_overlaps: true, no_gaps: true }
+    topology:
+      enabled: true
+      no_overlaps: true
+      no_coverage_gaps: true
+      # aoi_bbox: [minx, miny, maxx, maxy]
   roads:
     attributes:
       domains:
@@ -110,12 +117,11 @@ for the full key reference.
 ### Checks
 
 - **crs** — `required`, `allowed_epsg`, `expected_epsg`
-- **geometry** — `valid`, `no_empty`, `no_missing`, `fix`
+- **geometry** — `valid`, `no_empty`, `no_missing`, `repair` (prefer), legacy `fix`
 - **duplicates** — `exact`; `fuzzy.{enabled, predicate, min_overlap, max_distance}`
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
-- **topology** — `no_overlaps`, `no_gaps`, `no_coverage_gaps`, `no_dangles`,
-  `coincident_edges`, `coverage_area_ratio`, `ruleset`, `min_area`, `snap_tolerance`,
-  `aoi` / `aoi_bbox` (metric; layers in degrees are auto-reprojected)
+- **topology** — `no_overlaps`, `no_coverage_gaps` (+ `aoi`/`aoi_bbox`), `no_dangles`,
+  `coincident_edges`, `coverage_area_ratio`, `ruleset`; heuristic `no_gaps` (weaker)
 - **schema** — columns, geometry types/SRID, coordinate precision
 - **metadata** — sidecar presence + required keys (lightweight)
 
@@ -180,11 +186,13 @@ accepted under `defaults`/`layers`.
 ## Auto-fixing geometry
 
 ```bash
-geoqa run -c geoqa.yml --fix-output ./fixed
+geoqa run -c geoqa.yml --fix-output ./fixed --repair-audit ./repair-audit.json
 ```
 
-With `geometry.fix: true`, invalid geometries are repaired via
-`shapely.make_valid()` and the cleaned layer is written to the output folder.
+Prefer `geometry.repair` (make_valid / snap / slivers / dissolve + write modes).
+Legacy `geometry.fix: true` still runs a single `shapely.make_valid()` pass.
+Repair runs **after** checks in the same run (detect-then-repair). See
+[Repair](https://sergiuandrian.github.io/geoquality/repair/).
 
 ## Reports & integrations
 
@@ -218,7 +226,7 @@ geoqa schema -o geoqa.schema.json
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/sergiuandrian/geoquality
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: geoqa
         args: ["run", "-c", "geoqa.yml", "--html", "geoqa-report.html"]
