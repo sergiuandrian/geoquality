@@ -44,7 +44,8 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
 | `no_coverage_gaps` | AOI (or `total_bounds`) minus union — true coverage gaps |
 | `no_spillover` | Features extending outside an explicit AOI (requires `aoi`/`aoi_bbox`) |
 | `no_dangles` | Line endpoints with degree &lt; `min_degree` (default 2) |
-| `no_undershoots` | Degree-1 endpoints within `snap_tolerance` of another line |
+| `no_undershoots` | Degree-1 endpoints within `snap_tolerance` of another line (gap) |
+| `no_overshoots` | Short stub past a crossing/touching line (within `snap_tolerance`) |
 | `coincident_edges` | Almost-adjacent neighbours or ragged shared boundaries |
 | `min_area` | Ignore overlap/gap parts smaller than this (m²) |
 | `snap_tolerance` | Endpoint snap grid for dangles (m) |
@@ -68,9 +69,13 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
   gaps are found (inconclusive), so CI does not treat total_bounds as a real AOI.
 - **`no_spillover`** is the complement: feature area/length outside an **explicit**
   AOI. Without `aoi` / `aoi_bbox` the check is **SKIP** (not a total_bounds guess).
-- **`no_undershoots`** flags degree-1 endpoints that lie within `snap_tolerance`
-  of another line (almost connected). Pure open ends far from the network are
-  dangles, not undershoots — enable both for road QA.
+  Pair with `no_coverage_gaps` for any polygon coverage layer (admin units,
+  parcels, land cover, etc.).
+- **`no_undershoots` / `no_overshoots`** are generic line-network rules (roads,
+  hydro, utilities, boundaries-as-lines). Undershoot = almost connected
+  (`0 < dist ≤ snap_tolerance`). Overshoot = line crosses/touches another and
+  leaves a stub of length in `(0, snap_tolerance]` past the junction. Exact
+  T-junctions pass both. Enable with `no_dangles` via ruleset `network`.
 - **`no_overlaps` + `algorithm: auto`**: pairwise (vectorized spatial index) below
   `pairwise_threshold` (default 5000); above that, a fast coverage excess-area
   metric (same idea as `coverage_area_ratio`). Pairwise results name offenders;
@@ -90,10 +95,22 @@ topology:
   no_overlaps: true
   algorithm: auto
   no_coverage_gaps: true
+  no_spillover: true
   aoi_bbox: [0, 0, 1000, 1000]   # in source CRS before metric reprojection
   coincident_edges: true
   boundary_tolerance: 0.5
   min_area: 0.5
+```
+
+Line networks (any country / layer):
+
+```yaml
+topology:
+  enabled: true
+  ruleset: network          # no_dangles + no_undershoots + no_overshoots
+  snap_tolerance: 1.0       # metres
+  ignore_boundary: true
+  # aoi: "path/to/extent.gpkg"   # optional: ignore edge dangles
 ```
 
 ## schema

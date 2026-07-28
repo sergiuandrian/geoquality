@@ -203,7 +203,8 @@ def _run_layer_chunked(
             getattr(sub_cfg, f, False)
             for f in (
                 "no_overlaps", "no_gaps", "no_coverage_gaps", "no_spillover",
-                "no_dangles", "no_undershoots", "coincident_edges", "coverage_area_ratio",
+                "no_dangles", "no_undershoots", "no_overshoots",
+                "coincident_edges", "coverage_area_ratio",
             )
         ):
             continue
