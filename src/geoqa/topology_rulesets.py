@@ -16,6 +16,7 @@ RULESETS: dict[str, dict[str, Any]] = {
         "enabled": True,
         "no_dangles": True,
         "no_undershoots": True,
+        "no_overshoots": True,
         "ignore_boundary": True,
     },
     "admin_coverage": {

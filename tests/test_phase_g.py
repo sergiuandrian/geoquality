@@ -148,6 +148,7 @@ def test_expand_ruleset_explicit_wins():
     out = expand_ruleset("network", {"ruleset": "network", "ignore_boundary": False})
     assert out["no_dangles"] is True
     assert out["no_undershoots"] is True
+    assert out["no_overshoots"] is True
     assert out["ignore_boundary"] is False
     assert "cadastre_coverage" in RULESETS
 

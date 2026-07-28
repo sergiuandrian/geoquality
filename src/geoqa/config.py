@@ -135,6 +135,7 @@ class TopologyCheck(_Base):
     no_spillover: bool = False  # features extending outside an explicit AOI
     no_dangles: bool = False  # line endpoints should connect to the network
     no_undershoots: bool = False  # degree-1 endpoints near another line (almost connected)
+    no_overshoots: bool = False  # short stubs past a crossing/touching line
     coincident_edges: bool = False  # almost-adjacent / ragged shared boundaries
     coverage_area_ratio: bool = False  # fast layer self-overlap metric
     # Tolerances are expressed in metres (data is reprojected to a metric CRS).

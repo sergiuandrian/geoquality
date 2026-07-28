@@ -59,6 +59,10 @@ def run(gdf: gpd.GeoDataFrame, layer: str, source: str, cfg: TopologyCheck) -> l
         results.append(
             _undershoots(valid, types, layer, source, cfg, to_wgs84)
         )
+    if cfg.no_overshoots:
+        results.append(
+            _overshoots(valid, types, layer, source, cfg, to_wgs84)
+        )
     if cfg.coincident_edges:
         results.append(_coincident_edges(valid, types, layer, source, cfg))
 
@@ -744,6 +748,140 @@ def _undershoots(valid, types, layer, source, cfg, to_wgs84) -> CheckResult:
         CHECK + ".no_undershoots", layer, source, status_for(flagged, cfg.severity),
         "No undershoot endpoints." if flagged == 0
         else f"{flagged} undershoot endpoint(s) near another line.",
+        severity=cfg.severity, n_total=len(lines), n_failed=flagged, issues=issues,
+    )
+
+
+def _intersection_points(geom) -> list[Point]:
+    """Collect Point parts from an intersection geometry."""
+    if geom is None or geom.is_empty:
+        return []
+    if geom.geom_type == "Point":
+        return [geom]
+    if geom.geom_type == "MultiPoint":
+        return list(geom.geoms)
+    if geom.geom_type in ("LineString", "LinearRing"):
+        coords = list(geom.coords)
+        if not coords:
+            return []
+        return [Point(coords[0]), Point(coords[-1])]
+    if geom.geom_type == "MultiLineString":
+        out: list[Point] = []
+        for g in geom.geoms:
+            out.extend(_intersection_points(g))
+        return out
+    if geom.geom_type == "GeometryCollection":
+        out = []
+        for g in geom.geoms:
+            out.extend(_intersection_points(g))
+        return out
+    return []
+
+
+def _overshoots(valid, types, layer, source, cfg, to_wgs84) -> CheckResult:
+    """Short stubs past a crossing/touching line (complement of undershoots).
+
+    A degree-1 endpoint within ``snap_tolerance`` of another line, where the
+    owner line also intersects that line and the along-line stub from the
+    nearest intersection to the endpoint is in ``(0, tol]``, is an overshoot.
+    Exact T-junctions (stub ≈ 0) pass.
+    """
+    lines = valid[types.isin(["LineString", "MultiLineString"])]
+    if lines.empty:
+        return result(
+            CHECK + ".no_overshoots", layer, source, Status.SKIP, "No line features."
+        )
+    tol = cfg.snap_tolerance if cfg.snap_tolerance > 0 else _DEFAULT_BOUNDARY_EPS
+    min_degree = max(1, cfg.min_degree)
+
+    def _key(pt: tuple[float, float]) -> tuple[float, float]:
+        return (round(pt[0] / tol), round(pt[1] / tol))
+
+    # Per-endpoint metadata for degree-1 candidates only.
+    counts: Counter = Counter()
+    endpoint_meta: list[tuple[Any, tuple[float, float], Any]] = []  # (owner, xy, LineString)
+    for idx, geom in lines.geometry.items():
+        for ls in _iter_lines(geom):
+            coords = list(ls.coords)
+            if len(coords) < 2:
+                continue
+            for pt in (coords[0], coords[-1]):
+                key = _key(pt)
+                counts[key] += 1
+                endpoint_meta.append((idx, (float(pt[0]), float(pt[1])), ls))
+
+    try:
+        line_list = list(lines.geometry)
+        tree = shapely.STRtree(line_list)
+    except Exception as exc:  # noqa: BLE001
+        return result(
+            CHECK + ".no_overshoots", layer, source, Status.ERROR,
+            f"overshoot search failed: {exc}", severity=cfg.severity,
+        )
+
+    issues: list[Issue] = []
+    flagged = 0
+    seen: set[tuple[Any, float, float]] = set()
+    for owner, (x, y), ls in endpoint_meta:
+        key = _key((x, y))
+        if counts[key] >= min_degree:
+            continue
+        pt = Point(x, y)
+        try:
+            idxs = tree.query(pt.buffer(tol), predicate="intersects")
+        except Exception:  # noqa: BLE001
+            continue
+        stub: float | None = None
+        for j in idxs:
+            other_idx = lines.index[j]
+            if other_idx == owner:
+                continue
+            other = line_list[j]
+            try:
+                if float(pt.distance(other)) > tol:
+                    continue
+                inter = ls.intersection(other)
+            except Exception:  # noqa: BLE001
+                continue
+            pts = _intersection_points(inter)
+            if not pts:
+                continue
+            end_m = float(ls.project(pt))
+            best = min(abs(end_m - float(ls.project(p))) for p in pts)
+            if 1e-9 < best <= tol:
+                stub = best
+                break
+        if stub is None:
+            continue
+        sig = (owner, round(x, 6), round(y, 6))
+        if sig in seen:
+            continue
+        seen.add(sig)
+        flagged += 1
+        if len(issues) < 200:
+            lon, lat = _to_lonlat(x, y, to_wgs84)
+            detail: dict[str, Any] = {
+                "x": x, "y": y, "stub_length": stub, "tolerance": tol,
+            }
+            if lon is not None and lat is not None:
+                detail["lon"] = lon
+                detail["lat"] = lat
+            issues.append(
+                Issue(
+                    message=(
+                        f"overshoot stub={stub:.4g} past junction at "
+                        f"({lon:.6f}, {lat:.6f})" if lon is not None
+                        else f"overshoot stub={stub:.4g} past junction at ({x:.3f}, {y:.3f})"
+                    ),
+                    feature_id=owner,
+                    row_index=owner,
+                    detail=detail,
+                )
+            )
+    return result(
+        CHECK + ".no_overshoots", layer, source, status_for(flagged, cfg.severity),
+        "No overshoot stubs." if flagged == 0
+        else f"{flagged} overshoot stub(s) past a junction.",
         severity=cfg.severity, n_total=len(lines), n_failed=flagged, issues=issues,
     )
 
