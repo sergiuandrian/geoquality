@@ -10,6 +10,7 @@ RULESETS: dict[str, dict[str, Any]] = {
         "no_overlaps": True,
         "no_coverage_gaps": True,
         "no_spillover": True,
+        "no_multipart_overlap": True,
         "coincident_edges": True,
     },
     "network": {
@@ -24,6 +25,7 @@ RULESETS: dict[str, dict[str, Any]] = {
         "no_overlaps": True,
         "no_coverage_gaps": True,
         "no_spillover": True,
+        "no_multipart_overlap": True,
         "coincident_edges": True,
         "min_area": 1.0,
     },

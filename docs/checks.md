@@ -46,6 +46,7 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
 | `no_dangles` | Line endpoints with degree &lt; `min_degree` (default 2) |
 | `no_undershoots` | Degree-1 endpoints within `snap_tolerance` of another line (gap) |
 | `no_overshoots` | Short stub past a crossing/touching line (within `snap_tolerance`) |
+| `no_multipart_overlap` | Parts of MultiPolygon / MultiLineString must not overlap (touch OK) |
 | `coincident_edges` | Almost-adjacent neighbours or ragged shared boundaries |
 | `min_area` | Ignore overlap/gap parts smaller than this (m²) |
 | `snap_tolerance` | Endpoint snap grid for dangles (m) |
@@ -76,6 +77,9 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
   (`0 < dist ≤ snap_tolerance`). Overshoot = line crosses/touches another and
   leaves a stub of length in `(0, snap_tolerance]` past the junction. Exact
   T-junctions pass both. Enable with `no_dangles` via ruleset `network`.
+- **`no_multipart_overlap`** flags MultiPolygon / MultiLineString features whose
+  *parts* overlap with positive area/length (shared boundaries that only
+  `touches` are allowed). Enabled in `cadastre_coverage` / `admin_coverage`.
 - **`no_overlaps` + `algorithm: auto`**: pairwise (vectorized spatial index) below
   `pairwise_threshold` (default 5000); above that, a fast coverage excess-area
   metric (same idea as `coverage_area_ratio`). Pairwise results name offenders;

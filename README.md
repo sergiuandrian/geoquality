@@ -121,8 +121,8 @@ for the full key reference.
 - **duplicates** — `exact`; `fuzzy.{enabled, predicate, min_overlap, max_distance}`
 - **attributes** — `required`, `not_null`, `unique`, `max_null_fraction`, `domains.{allowed, min, max, regex}`
 - **topology** — `no_overlaps`, `no_coverage_gaps` / `no_spillover` (+ `aoi`/`aoi_bbox`),
-  `no_dangles`, `no_undershoots`, `no_overshoots`, `coincident_edges`,
-  `coverage_area_ratio`, `ruleset`; heuristic `no_gaps` (weaker)
+  `no_dangles`, `no_undershoots`, `no_overshoots`, `no_multipart_overlap`,
+  `coincident_edges`, `coverage_area_ratio`, `ruleset`; heuristic `no_gaps` (weaker)
 - **schema** — columns, geometry types/SRID, coordinate precision
 - **metadata** — sidecar presence + required keys (lightweight)
 
