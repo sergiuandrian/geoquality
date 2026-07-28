@@ -8,7 +8,9 @@ from pathlib import Path
 import geopandas as gpd
 
 from geoqa.datasource import Layer
+from geoqa.engine.dispatch import run_checks
 from geoqa.engine.util import write_fixed
+from geoqa.registry import get_registry
 from geoqa.result import CheckResult, LayerReport, Severity, Status
 
 
@@ -78,6 +80,8 @@ def apply_repair(
                     message=pg["message"],
                 )
             )
+        if repair_cfg.then_recheck:
+            _then_recheck(gdf, layer, cfg, lr)
         return gdf
 
     # Legacy path: geometry.fix mutated gdf in-place during the check.
@@ -85,3 +89,12 @@ def apply_repair(
     if fixed_total and fix_dir is not None:
         write_fixed(gdf, layer, fix_dir, lr)
     return gdf
+
+
+def _then_recheck(gdf: gpd.GeoDataFrame, layer: Layer, cfg, lr: LayerReport) -> None:
+    """Re-run geometry (+ topology if enabled) on the repaired layer."""
+    keep = {"geometry", "topology"}
+    skip = {spec.name for spec in get_registry().specs() if spec.name not in keep}
+    for r in run_checks(gdf, layer.name, layer.source, cfg, skip=skip):
+        r.check = f"{r.check}.after_repair"
+        lr.results.append(r)

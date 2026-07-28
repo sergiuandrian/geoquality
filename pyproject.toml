@@ -82,6 +82,9 @@ ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "postgis: needs live PostGIS (set GEOQA_PG_URL); skipped when unset",
+]
 addopts = "--cov=geoqa --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]

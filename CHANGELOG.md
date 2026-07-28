@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Live PostGIS write-back integration test (`pytest -m postgis`, needs
+  `GEOQA_PG_URL`); dry-run refusal path covered without the flag.
+- `geometry.repair.then_recheck` — optional re-run of geometry (+ topology) on
+  the repaired layer as `*.after_repair` results.
+- Topology: `no_spillover` (features outside explicit AOI) and `no_undershoots`
+  (degree-1 endpoints near but not touching another line). Rulesets
+  `cadastre_coverage` / `admin_coverage` enable spillover; `network` enables
+  undershoots.
+
+### Fixed
+- PostGIS live write-back reads the active GeoDataFrame geometry column
+  (e.g. `geom`) instead of assuming a column named `geometry`.
+
 ## [0.7.0] - 2026-07-24
 
 ### Changed

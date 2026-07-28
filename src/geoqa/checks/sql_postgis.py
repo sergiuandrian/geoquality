@@ -151,8 +151,8 @@ def only_sql_safe_checks(cfg) -> bool:
     if getattr(topo, "enabled", False) and any(
         getattr(topo, flag, False)
         for flag in (
-            "no_overlaps", "no_gaps", "no_coverage_gaps", "no_dangles",
-            "coincident_edges", "coverage_area_ratio",
+            "no_overlaps", "no_gaps", "no_coverage_gaps", "no_spillover",
+            "no_dangles", "no_undershoots", "coincident_edges", "coverage_area_ratio",
         )
     ):
         return False

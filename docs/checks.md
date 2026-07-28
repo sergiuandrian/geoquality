@@ -42,7 +42,9 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
 | `coverage_area_ratio` | Fast layer self-overlap metric (`sum(area) / area(union)`) |
 | `no_gaps` | **Heuristic:** interior holes of the *dissolved* union |
 | `no_coverage_gaps` | AOI (or `total_bounds`) minus union — true coverage gaps |
+| `no_spillover` | Features extending outside an explicit AOI (requires `aoi`/`aoi_bbox`) |
 | `no_dangles` | Line endpoints with degree &lt; `min_degree` (default 2) |
+| `no_undershoots` | Degree-1 endpoints within `snap_tolerance` of another line |
 | `coincident_edges` | Almost-adjacent neighbours or ragged shared boundaries |
 | `min_area` | Ignore overlap/gap parts smaller than this (m²) |
 | `snap_tolerance` | Endpoint snap grid for dangles (m) |
@@ -64,6 +66,11 @@ Named **rulesets** expand common flag sets: `cadastre_coverage`, `network`,
   Sparse or coastal layers will report large exterior “gaps” — that is expected.
   Without an explicit `aoi` / `aoi_bbox`, geoqa returns **WARN** even when zero
   gaps are found (inconclusive), so CI does not treat total_bounds as a real AOI.
+- **`no_spillover`** is the complement: feature area/length outside an **explicit**
+  AOI. Without `aoi` / `aoi_bbox` the check is **SKIP** (not a total_bounds guess).
+- **`no_undershoots`** flags degree-1 endpoints that lie within `snap_tolerance`
+  of another line (almost connected). Pure open ends far from the network are
+  dangles, not undershoots — enable both for road QA.
 - **`no_overlaps` + `algorithm: auto`**: pairwise (vectorized spatial index) below
   `pairwise_threshold` (default 5000); above that, a fast coverage excess-area
   metric (same idea as `coverage_area_ratio`). Pairwise results name offenders;
