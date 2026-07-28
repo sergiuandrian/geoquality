@@ -77,7 +77,7 @@ Compatibility shim: keep `geoqa.engine` as a module that imports from `geoqa.eng
 └──────┬──────┘
        ▼
 ┌─────────────┐
-│ re-validate │  OPT-IN later (Wave 2+/1.0): repair.then_recheck
+│ re-validate │  OPT-IN: geometry.repair.then_recheck → *.after_repair
 └──────┬──────┘
        ▼
 ┌─────────────┐

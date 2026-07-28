@@ -14,6 +14,7 @@ from geoqa.config import GeometryCheck, PostgisWriteConfig, RepairConfig, load_s
 from geoqa.engine import run_suite  # noqa: E402
 from geoqa.repair import effective_repair, run_repair, write_postgis  # noqa: E402
 from geoqa.repair.ops import op_dissolve_duplicates, op_drop_slivers, op_make_valid  # noqa: E402
+from geoqa.result import Status  # noqa: E402
 
 
 def test_effective_repair_from_legacy_fix():
@@ -107,6 +108,37 @@ defaults:
     assert any(r.check == "geometry.repair" for r in report.all_results)
 
 
+def test_then_recheck_appends_after_repair_results(tmp_path: Path):
+    gpkg = tmp_path / "data.gpkg"
+    gpd.GeoDataFrame(
+        {"parcel_id": ["P1"], "geometry": [bowtie()]}, crs="EPSG:3857"
+    ).to_file(gpkg, driver="GPKG")
+    cfg = tmp_path / "geoqa.yml"
+    cfg.write_text(
+        f"""
+version: 1
+name: then-recheck
+sources:
+  - path: "{gpkg.as_posix()}"
+    name: parcels
+defaults:
+  geometry:
+    valid: true
+    repair:
+      enabled: true
+      make_valid: true
+      write_mode: none
+      then_recheck: true
+""",
+        encoding="utf-8",
+    )
+    report = run_suite(load_suite(cfg))
+    by = {r.check: r for r in report.all_results}
+    assert by["geometry.valid"].status == Status.FAIL
+    assert by["geometry.valid.after_repair"].status == Status.PASS
+    assert by["geometry.repair"].fixed >= 1
+
+
 def test_postgis_write_dry_run_default():
     gdf = gpd.GeoDataFrame(
         {"id": [1], "geometry": [Point(0, 0)]}, crs="EPSG:4326"
@@ -147,7 +179,45 @@ def test_postgis_write_refuses_missing_epsg():
     assert "EPSG" in result["message"]
 
 
-def test_postgis_write_rowcount_miss_is_failure(monkeypatch):
+def test_postgis_write_uses_active_geometry_column(monkeypatch):
+    """PostGIS layers often use geom as the active geometry column name."""
+    gdf = gpd.GeoDataFrame(
+        {"id": [1], "geom": [Point(0, 0)]}, geometry="geom", crs="EPSG:4326"
+    )
+    cfg = PostgisWriteConfig(
+        connection="postgresql://u:p@localhost/db",
+        table="public.t",
+        dry_run=False,
+        geom_column="geom",
+    )
+
+    class OkResult:
+        rowcount = 1
+
+    class OkConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, stmt, params=None):
+            assert params is not None and "wkb" in params
+            return OkResult()
+
+    class OkEngine:
+        def begin(self):
+            return OkConn()
+
+        def dispose(self):
+            pass
+
+    monkeypatch.setattr(
+        "sqlalchemy.create_engine", lambda *a, **k: OkEngine()
+    )
+    result = write_postgis(gdf, cfg, allow_write=True)
+    assert result["ok"] is True
+    assert result["updated"] == 1
     gdf = gpd.GeoDataFrame(
         {"id": [1, 2], "geometry": [Point(0, 0), Point(1, 1)]}, crs="EPSG:4326"
     )
