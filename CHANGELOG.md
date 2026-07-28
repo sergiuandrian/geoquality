@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Topology: `no_overshoots` (short stub past a junction within `snap_tolerance`);
+  included in ruleset `network` with dangles / undershoots.
+
+### Changed
+- Docs: generic coverage/network examples (`then_recheck`, spillover + AOI,
+  undershoot/overshoot) not tied to a single country dataset.
+
 ## [0.7.1] - 2026-07-28
 
 ### Added

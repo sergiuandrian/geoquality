@@ -21,9 +21,9 @@ in the repository.
 
 | Profile | Layer focus | Highlights |
 |---|---|---|
-| `parcels` | Cadastre / parcel polygons | `parcel_id` unique; overlaps + `no_coverage_gaps` (set AOI); fuzzy near-dupes |
-| `roads` | Road / network lines | `name` required; dangles; `lanes` / `surface` domains |
-| `admin_boundaries` | Administrative polygons | `name` / `code`; overlaps + coverage gaps (set AOI) |
+| `parcels` | Cadastre / parcel polygons | `parcel_id` unique; overlaps + `no_coverage_gaps` / spillover (set AOI); fuzzy near-dupes |
+| `roads` | Any line network | `name` required; ruleset `network` (dangles / under / overshoots); `lanes` / `surface` domains |
+| `admin_boundaries` | Administrative polygons | `name` / `code`; overlaps + coverage / spillover (set AOI) |
 | `addresses` | Address / POI points | unique `id`; fuzzy near-duplicates by distance |
 
 Unknown profile names exit with code 2 and list the valid options.

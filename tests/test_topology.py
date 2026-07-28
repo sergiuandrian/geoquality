@@ -325,6 +325,43 @@ def test_undershoot_connected_t_junction_passes():
     assert res["topology.no_undershoots"].status == Status.PASS
 
 
+def test_overshoot_stub_past_crossing():
+    # Horizontal crosses vertical at x=10 and continues 0.5 m past (overshoot).
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (10.5, 0)]),
+                LineString([(10, -5), (10, 5)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_overshoots=True, snap_tolerance=1.0),
+    ))
+    assert res["topology.no_overshoots"].status == Status.WARN
+    assert res["topology.no_overshoots"].n_failed >= 1
+    assert res["topology.no_overshoots"].issues[0].detail["stub_length"] > 0
+
+
+def test_overshoot_exact_t_junction_passes():
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [
+                LineString([(0, 0), (10, 0)]),
+                LineString([(10, -5), (10, 5)]),
+            ]
+        },
+        crs="EPSG:3857",
+    )
+    res = _by_check(topology.run(
+        gdf, "l", "s",
+        TopologyCheck(enabled=True, no_overshoots=True, snap_tolerance=1.0),
+    ))
+    assert res["topology.no_overshoots"].status == Status.PASS
+
+
 def test_overlaps_algorithm_coverage():
     gdf = gpd.GeoDataFrame(
         {"geometry": [square(0, 0), square(5, 0)]}, crs="EPSG:3857"

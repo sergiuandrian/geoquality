@@ -36,20 +36,23 @@ layers:
       enabled: true
       no_overlaps: true
       no_coverage_gaps: true
-      # aoi_bbox: [minx, miny, maxx, maxy]   # source CRS
+      no_spillover: true
+      # aoi_bbox: [minx, miny, maxx, maxy]   # source CRS — required for reliable coverage/spillover
   roads:
     attributes:
       domains:
         lanes: { min: 1, max: 8 }
-    topology: { enabled: true, no_dangles: true }
+    topology: { enabled: true, ruleset: network, snap_tolerance: 1.0 }
 ```
 
 Every check supports `enabled` (bool) and `severity` (`error` | `warn` | `info`).
 Only `error`-severity failures fail the run (tune with `--fail-on`).
 
-Prefer **`no_coverage_gaps` + AOI** for polygon coverage. The dissolve-hole
-heuristic `no_gaps` is weaker — see [Checks](checks.md). Prefer
-**`geometry.repair`** over legacy `geometry.fix` — see [Repair](repair.md).
+Prefer **`no_coverage_gaps` + AOI** (and optionally `no_spillover`) for any
+polygon coverage layer. The dissolve-hole heuristic `no_gaps` is weaker — see
+[Checks](checks.md). Prefer **`geometry.repair`** (optional `then_recheck`) over
+legacy `geometry.fix` — see [Repair](repair.md). Line networks: ruleset
+`network` (`no_dangles` + undershoot/overshoot).
 
 ## Validation & autocomplete
 
